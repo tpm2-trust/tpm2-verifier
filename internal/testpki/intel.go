@@ -71,6 +71,16 @@ func (c *IntelChain) DeviceChain() []byte {
 	return b
 }
 
+// AIAFiles returns every CA certificate keyed by its AIA URL, like a
+// vendor's web server would publish them.
+func (c *IntelChain) AIAFiles() map[string][]byte {
+	out := map[string][]byte{}
+	for _, ca := range []*CA{c.Root, c.Int1, c.Int2, c.ROM, c.Kernel, c.PTT} {
+		out[AIAURL(ca.Cert)] = ca.Cert.Raw
+	}
+	return out
+}
+
 // CRLs returns the four CRLs of the hierarchy. Certificates in revoked are
 // listed on the CRL responsible for them.
 func (c *IntelChain) CRLs(t testing.TB, revoked ...*x509.Certificate) map[string][]byte {

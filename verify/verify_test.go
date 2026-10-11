@@ -287,7 +287,7 @@ func (m crlTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}, Request: r}, nil
 }
 
-func fetcherFor(t *testing.T, pki *testpki.IntelChain, crls map[string][]byte) *fetch.CRLFetcher {
+func fetcherFor(t *testing.T, pki *testpki.IntelChain, crls map[string][]byte) *fetch.Fetcher {
 	return fetch.New(fetch.WithClient(&http.Client{Transport: crlTransport(crls)}),
 		fetch.WithCacheDir(t.TempDir()), fetch.WithTime(pki.Now))
 }
@@ -349,5 +349,80 @@ func TestCRLDownloadFailure(t *testing.T) {
 	wantStatus(t, r, verify.StatusTrusted) // best effort
 	if d := r.Chain[0].Revocation.Detail; !strings.Contains(d, "404") {
 		t.Errorf("detail %q", d)
+	}
+}
+
+// Without the NV chain, the per-device CAs are downloaded via AIA.
+func TestAIACompletesChain(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	f := fetcherFor(t, pki, pki.AIAFiles())
+	r, _ := verify.New(testStore(t, pki, ""), verify.WithTime(pki.Now), verify.WithAIAFetcher(f)).
+		Verify(ctx, mustParse(t, pki.EK.Raw), nil)
+	wantStatus(t, r, verify.StatusTrusted)
+	want := []verify.Source{"leaf", "aia", "aia", "aia", "store", "store", "store"}
+	for i, l := range r.Chain {
+		if l.Source != want[i] {
+			t.Errorf("depth %d: source %s, want %s", i, l.Source, want[i])
+		}
+	}
+	if len(r.AIA) != 3 {
+		t.Errorf("AIA log %+v", r.AIA)
+	}
+}
+
+// An unknown vendor: the chain is completed up to a root via AIA, but the
+// downloaded root is not trusted.
+func TestAIAUnknownRootNotTrusted(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	other := testpki.IntelLike(t)
+	f := fetcherFor(t, pki, pki.AIAFiles())
+	r, _ := verify.New(testStore(t, other, ""), verify.WithTime(pki.Now), verify.WithAIAFetcher(f)).
+		Verify(ctx, mustParse(t, pki.EK.Raw), nil)
+	wantStatus(t, r, verify.StatusUntrustedRoot)
+	root := r.Chain[len(r.Chain)-1]
+	if len(r.Chain) != 7 || root.Source != verify.SourceAIA || root.Anchor {
+		t.Fatalf("chain %d, root %+v", len(r.Chain), root)
+	}
+	if !strings.Contains(strings.Join(r.Hints, "\n"), root.Fingerprint) {
+		t.Errorf("hints %v", r.Hints)
+	}
+}
+
+// A downloaded root identical to a store root is the store's trust anchor:
+// here the store has only the root, and the AIA URL for Int1 serves Int1
+// together with the root (like a .p7c bundle would).
+func TestAIARootFromStoreTrusted(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	sum := sha256.Sum256(pki.Root.Cert.Raw)
+	var s store.Store
+	if err := s.AddFS(fstest.MapFS{
+		"v/root.der":    {Data: pki.Root.Cert.Raw},
+		"v/vendor.yaml": {Data: []byte("id: v\nmanufacturer_ids: [V]\ncertificates:\n  - {file: root.der, role: root, source: t, sha256: " + hex.EncodeToString(sum[:]) + "}\n")},
+	}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	files := pki.AIAFiles()
+	files[testpki.AIAURL(pki.Int1.Cert)] = append(bytes.Clone(pki.Int1.Cert.Raw), pki.Root.Cert.Raw...)
+
+	r, _ := verify.New(&s, verify.WithTime(pki.Now), verify.WithAIAFetcher(fetcherFor(t, pki, files))).
+		Verify(ctx, mustParse(t, pki.EK.Raw), mustParseAll(t, pki.DeviceChain()))
+	wantStatus(t, r, verify.StatusTrusted)
+	root := r.Chain[len(r.Chain)-1]
+	if !root.Anchor || root.Source != verify.SourceStore {
+		t.Errorf("root %+v", root)
+	}
+	if r.Chain[4].Source != verify.SourceAIA || r.Chain[5].Source != verify.SourceAIA {
+		t.Errorf("Int2/Int1 not from AIA: %s %s", r.Chain[4].Source, r.Chain[5].Source)
+	}
+}
+
+func TestAIAFetchErrorLogged(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	f := fetcherFor(t, pki, map[string][]byte{})
+	r, _ := verify.New(testStore(t, pki, ""), verify.WithTime(pki.Now), verify.WithAIAFetcher(f)).
+		Verify(ctx, mustParse(t, pki.EK.Raw), nil)
+	wantStatus(t, r, verify.StatusIncomplete)
+	if len(r.AIA) != 1 || !strings.Contains(r.AIA[0].Error, "404") {
+		t.Errorf("AIA log %+v", r.AIA)
 	}
 }

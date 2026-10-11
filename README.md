@@ -6,10 +6,11 @@ curated, fingerprint-pinned store of TPM vendor root CAs.
 
 It is the Go successor of [intel-ek-dechainer](https://github.com/mrwiora/intel-ek-dechainer)
 and does everything it did (split the per-device chain from NV, verify against
-the Intel OnDie CA) for any vendor. It also reads the TPM directly, and checks
-every certificate of the chain against the CRLs named in its distribution
-points, including indirect CRLs. CRLs are cached locally, and their
-signatures are verified.
+the Intel OnDie CA) for any vendor. It also reads the TPM directly, completes
+chains via AIA, and checks every certificate of the chain against the CRLs
+named in its distribution points, including indirect CRLs. CRLs are cached
+locally, and their signatures are verified. For TPMs of unknown vendors it
+writes a debug bundle that can be replayed and analyzed anywhere.
 
 ## Install
 
@@ -28,6 +29,7 @@ tpm2-ek info            # -v for attributes, fingerprints, CRL details; -json
 
 tpm2-ek verify          # only the verification of the EK certificates in the TPM
 tpm2-ek export -o out   # EK certs, chain, raw NV, vendor CAs + matching openssl command
+tpm2-ek debug           # debug bundle for unknown vendors / bug reports (see below)
 
 # The same for files, e.g. read with tpm2-tools (see the manual section)
 tpm2-ek verify ek.der chain.der
@@ -49,6 +51,7 @@ Reading the TPM needs access to `/dev/tpmrm0` (root or the `tss` group).
 | `device:/dev/tpm0` | a TPM character device |
 | `swtpm:host=localhost,port=2321` | [swtpm](https://github.com/stefanberger/swtpm) with `--server type=tcp` |
 | `swtpm:path=/run/swtpm.sock` | swtpm with `--server type=unixio` |
+| `bundle:file.tar.gz` | replay a [debug bundle](#debug-bundles-for-unknown-vendors) |
 
 Only public data is read and no secrets are used: indices are read with
 owner authorization and an empty password (if `ownerread` is set), or with
@@ -73,6 +76,17 @@ Chain:
 
 `verify` and `info` exit with 0 if trusted, 1 if not (`untrusted-root`,
 `incomplete`, `revoked`, `invalid`, or no EK certificate) and 2 on errors.
+
+### Chain building and AIA
+
+The chain is built from the EK certificate upwards using, in this order of
+preference, the store's trust anchors, the certificates read from the TPM's
+chain NV indices and the store's intermediates. If no issuer is known, the
+issuer certificate is downloaded from the certificate's AIA "CA Issuers" URL
+(DER, PEM or PKCS#7 `.p7c`) and cached in `~/.cache/tpm2-verifier/certs/`.
+Downloaded certificates are only used as intermediates: a root obtained via
+AIA is reported (`untrusted-root`, with its SHA-256) but never trusted unless
+the identical certificate is in the vendor store.
 
 ### Revocation and the CRL cache
 
@@ -100,8 +114,35 @@ Downloaded CRLs are cached in `~/.cache/tpm2-verifier/crls/` (Windows:
 A cached CRL is reused for 24 hours and refetched sooner if its `nextUpdate` has passed (with
 `If-None-Match`/`If-Modified-Since`). If the download fails, the cached copy
 is used with a warning. A CRL with a lower CRL number never replaces a newer
-cached one. `-offline` uses the cache only, `-no-fetch` disables fetching,
-`-crl file` adds local CRLs.
+cached one. `-offline` uses the cache only, `-no-fetch` disables all
+downloads (CRLs and AIA), `-crl file` adds local CRLs.
+
+## Debug bundles for unknown vendors
+
+```bash
+sudo tpm2-ek debug                   # writes tpm2-ek-debug-<manufacturer>-<time>.tar.gz
+tpm2-ek info -tpm bundle:tpm2-ek-debug-IFX-20261011-120000.tar.gz   # anywhere, no TPM needed
+```
+
+A bundle records everything `tpm2-ek` reads, so a TPM can be analyzed on
+another machine exactly as if it were attached:
+
+| File | Content |
+|------|---------|
+| `manifest.json` | tool version, OS, kernel, TPM sysfs attributes, DMI vendor/model/BIOS (no serial numbers or UUIDs; `-no-platform` omits all of it) |
+| `tpm/properties.json`, `tpm/info.json` | all fixed TPM properties, raw and decoded |
+| `tpm/nv.json`, `tpm/nv/*.bin` | every NV index: public area, read errors, content of the readable TCG indices |
+| `analysis/summary.txt`, `analysis/report.json` | the `info -v` output and JSON report at creation time |
+| `analysis/chains/<index>/<depth>-<source>.der` | every certificate of each EK chain, including those downloaded via AIA |
+
+**Privacy:** the EK certificate uniquely identifies the TPM and thus the
+machine. Share bundles only with people you trust with that. No secrets,
+keys or measurements are included.
+
+Bundles are also test fixtures: every bundle in `testdata/bundles/` is
+replayed by the tests and must still produce the status recorded in it.
+`testdata/bundles/swtpm-localca.tar.gz` is a swtpm provisioned by
+`swtpm_setup`, an example of a vendor that is not in the store.
 
 ## Library
 
@@ -137,8 +178,9 @@ Files instead of a TPM: `certparse.Parse(ekDER)`, `certparse.ParseAll(chainBlob)
 
 | Package     | Purpose |
 |-------------|---------|
+| `bundle`    | Records a TPM into a debug bundle and replays it as a `tpm.Fake` |
 | `tpm`       | Reads TPM properties and NV indices (go-tpm, pure Go): Linux device, Windows TBS, swtpm; NV index labels; `Fake` backend |
-| `fetch`     | Downloads CRLs from distribution points into the local cache |
+| `fetch`     | Downloads CRLs (CDP) and issuer certificates (AIA) into the local cache |
 | `certparse` | DER chain splitting, certificate parsing with TCG extensions (critical subjectAltName with TPM identity, EK EKU), CRL distribution points with `cRLIssuer`, indirect CRLs, SHA-1 signatures of legacy vendor PKIs |
 | `store`     | Loads and validates the vendor trust store (fingerprints, root self-signature, CA flag) |
 | `verify`    | Chain building and validation with a per-link report: signature, validity, path length, critical extensions, revocation |
@@ -341,9 +383,9 @@ openssl verify -show_chain -crl_check_all -extended_crl \
 | 1 | `certparse` + `verify`, offline verification of files, CLI `inspect`/`split`/`verify`/`store` | done |
 | 1b | CRLs fetched from the distribution points, signature checked, cached locally | done |
 | 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS, swtpm): `tpm2-ek info` / `verify` / `export` | done |
-| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable as a fake TPM for tests | next |
-| 4 | Walk AIA up to the root for vendors without a stored chain | |
-| 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | |
+| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable with `-tpm bundle:` and as test fixture | done |
+| 4 | Walk AIA up to the root for vendors without a stored chain | done |
+| 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | next |
 
 ## Development
 
@@ -360,8 +402,9 @@ Tests need no hardware TPM:
   indirect CRL),
 - if [swtpm](https://github.com/stefanberger/swtpm) is installed, the TPM
   code is tested against it end to end (provisioned NV indices, chunked
-  reads, authorization rules, `info`/`verify`/`export`); otherwise those
-  tests are skipped.
+  reads, authorization rules, `info`/`verify`/`export`/`debug`); otherwise
+  those tests are skipped,
+- debug bundles in `testdata/bundles/` are replayed as regression fixtures.
 
 Real EK certificates identify a device, so they are not committed.
 

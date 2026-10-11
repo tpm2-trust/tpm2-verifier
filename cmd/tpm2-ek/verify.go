@@ -114,6 +114,7 @@ func runVerify(args []string, stdout io.Writer) error {
 }
 
 func printReport(w io.Writer, name string, r *verify.Report, verbose bool) {
+	defer printAIA(w, r, verbose)
 	fmt.Fprintf(w, "%s: %s", name, strings.ToUpper(string(r.Status)))
 	if r.Vendor != "" {
 		fmt.Fprintf(w, " (vendor %s)", r.Vendor)
@@ -183,6 +184,17 @@ func verifyFromTPM(spec string, st *store.Store, opts []verify.Option, asJSON, v
 		}
 	}
 	return resultsExit(results)
+}
+
+func printAIA(w io.Writer, r *verify.Report, verbose bool) {
+	for _, a := range r.AIA {
+		switch {
+		case a.Error != "":
+			fmt.Fprintf(w, "AIA: %s: %s\n", a.URL, a.Error)
+		case verbose:
+			fmt.Fprintf(w, "AIA: %s (%s): %s\n", a.URL, a.Origin, strings.Join(a.Certificates, "; "))
+		}
+	}
 }
 
 func printRevocation(w io.Writer, rv verify.Revocation) {

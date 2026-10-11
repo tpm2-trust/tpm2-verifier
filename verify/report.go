@@ -34,6 +34,7 @@ const (
 	SourceLeaf     Source = "leaf"
 	SourceProvided Source = "provided" // passed by the caller, e.g. read from the TPM
 	SourceStore    Source = "store"
+	SourceAIA      Source = "aia" // downloaded from an AIA "CA Issuers" URL
 )
 
 // RevocationStatus of one certificate.
@@ -66,6 +67,15 @@ type Revocation struct {
 	Warning string `json:"warning,omitempty"`
 }
 
+// AIAFetch is one download of an AIA "CA Issuers" URL.
+type AIAFetch struct {
+	URL          string   `json:"url"`
+	Origin       string   `json:"origin,omitempty"`
+	Certificates []string `json:"certificates,omitempty"`
+	Warning      string   `json:"warning,omitempty"`
+	Error        string   `json:"error,omitempty"`
+}
+
 // Link is one certificate of the chain.
 type Link struct {
 	Cert *certparse.Certificate `json:"-"`
@@ -93,10 +103,12 @@ type Report struct {
 	// TPM is the TPM identity claimed by the leaf certificate.
 	TPM *certparse.TPMInfo `json:"tpm,omitempty"`
 	// Chain starts with the leaf.
-	Chain    []*Link   `json:"chain"`
-	Problems []string  `json:"problems,omitempty"`
-	Hints    []string  `json:"hints,omitempty"`
-	Time     time.Time `json:"time"`
+	Chain    []*Link  `json:"chain"`
+	Problems []string `json:"problems,omitempty"`
+	Hints    []string `json:"hints,omitempty"`
+	// AIA lists the issuer certificate downloads made while building the chain.
+	AIA  []AIAFetch `json:"aia,omitempty"`
+	Time time.Time  `json:"time"`
 }
 
 func newLink(c *certparse.Certificate, src Source, e *store.Entry) *Link {

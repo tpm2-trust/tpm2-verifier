@@ -34,11 +34,12 @@ func commands() []command {
 	return []command{
 		{"info", "show TPM vendor, NV certificates and EK verification in one go", runInfo},
 		{"export", "export EK certificates, chain and vendor CAs from the TPM to files", runExport},
+		{"debug", "write a debug bundle of the TPM (for unknown vendors and bug reports)", runDebug},
 		{"inspect", "show details of certificates and CRLs (DER, PEM or concatenated DER)", runInspect},
 		{"split", "split a concatenated DER chain (e.g. NV 0x01C00100) into files", runSplit},
 		{"verify", "verify EK certificates (from the TPM or files) against the vendor store", runVerify},
 		{"store", "list, show and export the vendor trust store", runStore},
-		{"cache", "list or clear the CRL cache", runCache},
+		{"cache", "list or clear the CRL and certificate cache", runCache},
 		{"version", "print the version", runVersion},
 	}
 }
@@ -87,6 +88,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func runVersion(_ []string, stdout io.Writer) error {
+	fmt.Fprintln(stdout, versionString())
+	return nil
+}
+
+func versionString() string {
 	v := version
 	if v == "" {
 		v = "(devel)"
@@ -94,8 +100,7 @@ func runVersion(_ []string, stdout io.Writer) error {
 			v = bi.Main.Version
 		}
 	}
-	fmt.Fprintln(stdout, "tpm2-ek", v)
-	return nil
+	return "tpm2-ek " + v
 }
 
 // newFlagSet returns a flag set that prints its usage to stderr.

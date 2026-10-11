@@ -17,6 +17,8 @@ type Fake struct {
 type FakeNV struct {
 	Public NVPublic
 	Data   []byte
+	// PublicErr, if set, is returned by NVReadPublic (e.g. a recorded failure).
+	PublicErr error
 	// ReadErr, if set, is returned by NVRead (e.g. a recorded failure).
 	ReadErr error
 }
@@ -44,24 +46,27 @@ func (f *Fake) NVReadPublic(_ context.Context, index uint32) (*NVPublic, error) 
 	if !ok {
 		return nil, &NVError{index, errors.New("index not defined")}
 	}
+	if nv.PublicErr != nil {
+		return nil, &NVError{index, nv.PublicErr}
+	}
 	p := nv.Public
 	p.Index = index
 	return &p, nil
 }
 
-// NVRead implements Backend. It applies the same authorization rules as the
-// device backend.
+// NVRead implements Backend. A recorded ReadErr is returned as is; otherwise
+// the same authorization rules as the device backend apply.
 func (f *Fake) NVRead(ctx context.Context, index uint32) ([]byte, error) {
 	pub, err := f.NVReadPublic(ctx, index)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := readAuths(pub); err != nil {
-		return nil, &NVError{index, err}
-	}
 	nv := f.NV[index]
 	if nv.ReadErr != nil {
 		return nil, &NVError{index, nv.ReadErr}
+	}
+	if _, err := readAuths(pub); err != nil {
+		return nil, &NVError{index, err}
 	}
 	return slices.Clone(nv.Data), nil
 }

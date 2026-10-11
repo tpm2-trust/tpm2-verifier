@@ -210,3 +210,22 @@ func TestDecodeManufacturer(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePKCS7(t *testing.T) {
+	for _, f := range []string{"intel-root-int1.p7c", "intel-root-int1.p7b"} {
+		certs, err := certparse.ParseCertificatesAny(readFile(t, "../testdata/pkcs7/"+f))
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if len(certs) != 2 {
+			t.Fatalf("%s: %d certificates", f, len(certs))
+		}
+	}
+	// Plain DER still works through the same entry point.
+	if certs, err := certparse.ParseCertificatesAny(intelStatic(t)[0]); err != nil || len(certs) != 1 {
+		t.Fatalf("DER: %d, %v", len(certs), err)
+	}
+	if _, err := certparse.ParseCertificatesAny([]byte("garbage")); err == nil {
+		t.Error("garbage accepted")
+	}
+}

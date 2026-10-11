@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mrwiora/tpm2-verifier/bundle"
 	"github.com/mrwiora/tpm2-verifier/internal/swtpmtest"
 	"github.com/mrwiora/tpm2-verifier/tpm"
 )
@@ -88,5 +89,41 @@ func TestExportFromSwtpm(t *testing.T) {
 	res, err := exec.Command("sh", "-c", cmdline).CombinedOutput()
 	if err != nil || !strings.Contains(string(res), ": OK") {
 		t.Fatalf("openssl: %v\n%s\n%s", err, cmdline, res)
+	}
+}
+
+func TestDebugBundleReplay(t *testing.T) {
+	f := newFixture(t, false)
+	spec := provisioned(t, f)
+	out := filepath.Join(f.dir, "debug.tar.gz")
+	code, stdout, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", out)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "EK:   0x01C00002 TRUSTED") || !strings.Contains(stdout, "Privacy") {
+		t.Errorf("unexpected output:\n%s", stdout)
+	}
+
+	b, err := bundle.Load(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"analysis/summary.txt", "analysis/report.json", "analysis/chains/0x01C00002/6-store.der"} {
+		if _, ok := b.Extra[name]; !ok {
+			t.Errorf("bundle lacks %s", name)
+		}
+	}
+
+	// The replay shows the same as the live TPM.
+	_, live, _ := runCLI("info", "-v", "-tpm", spec, "-store", f.store, "-no-fetch")
+	code, replay, stderr := runCLI("info", "-v", "-tpm", "bundle:"+out, "-store", f.store, "-no-fetch")
+	if code != 0 || live != replay {
+		t.Errorf("replay differs (exit %d, %s)\nlive:\n%s\nreplay:\n%s", code, stderr, live, replay)
+	}
+	if code, _, stderr := runCLI("export", "-tpm", "bundle:"+out, "-o", filepath.Join(f.dir, "exp")); code != 0 {
+		t.Errorf("export from bundle: exit %d %s", code, stderr)
+	}
+	if code, _, _ := runCLI("debug", "-tpm", "bundle:"+out); code != 2 {
+		t.Errorf("debug of a bundle: exit %d", code)
 	}
 }

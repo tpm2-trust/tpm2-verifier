@@ -12,9 +12,15 @@ import (
 )
 
 // CRLFetcher retrieves CRLs from distribution point URLs.
-// *fetch.CRLFetcher implements it.
+// *fetch.Fetcher implements it.
 type CRLFetcher interface {
 	FetchCRL(ctx context.Context, url string) (*fetch.Result, error)
+}
+
+// CertFetcher retrieves issuer certificates from AIA URLs.
+// *fetch.Fetcher implements it.
+type CertFetcher interface {
+	FetchCertificates(ctx context.Context, url string) (*fetch.CertResult, error)
 }
 
 // checkRevocation sets Link.Revocation for every certificate of the chain

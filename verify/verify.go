@@ -42,6 +42,7 @@ type Verifier struct {
 	now      func() time.Time
 	crls     []*certparse.CRL
 	fetcher  CRLFetcher
+	aia      CertFetcher
 	mode     RevocationMode
 	accepted []asn1.ObjectIdentifier
 }
@@ -60,6 +61,12 @@ func WithCRLs(crls ...*certparse.CRL) Option {
 // WithCRLFetcher fetches CRLs from the distribution points of the
 // certificates when no CRL passed with WithCRLs applies.
 func WithCRLFetcher(f CRLFetcher) Option { return func(v *Verifier) { v.fetcher = f } }
+
+// WithAIAFetcher completes chains by downloading issuer certificates from
+// the AIA "CA Issuers" URL of a certificate whose issuer is not known.
+// Downloaded certificates are only used as intermediates; a downloaded root
+// is never trusted unless the same certificate is in the store.
+func WithAIAFetcher(f CertFetcher) Option { return func(v *Verifier) { v.aia = f } }
 
 // WithRevocation sets the revocation mode.
 func WithRevocation(m RevocationMode) Option { return func(v *Verifier) { v.mode = m } }
@@ -97,12 +104,13 @@ func (v *Verifier) Verify(ctx context.Context, leaf *certparse.Certificate, inte
 		return nil, err
 	}
 	now := v.now()
-	pool := v.candidates(intermediates)
+	b := &builder{v: v, ctx: ctx, pool: v.candidates(intermediates), tried: map[string]bool{}}
 
 	start := candidate{cert: leaf, src: SourceLeaf, entry: v.store.ByFingerprint(leaf.Fingerprint)}
-	p := v.build([]candidate{start}, pool)
+	p := b.build([]candidate{start})
+	pool := b.pool
 
-	r := &Report{Status: p.status, TPM: leaf.TPM, Time: now}
+	r := &Report{Status: p.status, TPM: leaf.TPM, Time: now, AIA: b.log}
 	for _, c := range p.path {
 		r.Chain = append(r.Chain, newLink(c.cert, c.src, c.entry))
 	}
@@ -161,8 +169,18 @@ func better(a, b pathResult) bool {
 	return len(a.path) > len(b.path)
 }
 
+// builder holds the state of one chain search.
+type builder struct {
+	v     *Verifier
+	ctx   context.Context
+	pool  []candidate
+	tried map[string]bool // AIA URLs already fetched
+	log   []AIAFetch
+}
+
 // build extends path depth-first and returns the best chain found.
-func (v *Verifier) build(path []candidate, pool []candidate) pathResult {
+func (b *builder) build(path []candidate) pathResult {
+	v := b.v
 	cur := path[len(path)-1]
 	if cur.entry != nil && cur.entry.Role == store.RoleRoot {
 		return pathResult{path: path, status: StatusTrusted}
@@ -175,13 +193,17 @@ func (v *Verifier) build(path []candidate, pool []candidate) pathResult {
 		best.problems = []string{"maximum chain depth reached"}
 		return best
 	}
+	issuers := v.issuers(cur.cert, path, b.pool)
+	if len(issuers) == 0 && b.fetchAIA(cur.cert) {
+		issuers = v.issuers(cur.cert, path, b.pool)
+	}
 	var sigProblems []string
-	for _, cand := range v.issuers(cur.cert, path, pool) {
+	for _, cand := range issuers {
 		if err := certparse.CheckSignature(cur.cert.Certificate, cand.cert.Certificate); err != nil {
 			sigProblems = append(sigProblems, fmt.Sprintf("candidate issuer %q (%s): %v", cand.cert.SubjectString(), short(cand.cert.Fingerprint), err))
 			continue
 		}
-		res := v.build(append(slices.Clip(path), cand), pool)
+		res := b.build(append(slices.Clip(path), cand))
 		if better(res, best) {
 			best = res
 		}
@@ -190,6 +212,39 @@ func (v *Verifier) build(path []candidate, pool []candidate) pathResult {
 		best.problems = sigProblems
 	}
 	return best
+}
+
+// fetchAIA downloads the issuer certificates named in c's AIA extension
+// into the pool. It reports whether new certificates were added.
+func (b *builder) fetchAIA(c *certparse.Certificate) bool {
+	if b.v.aia == nil {
+		return false
+	}
+	added := false
+	for _, u := range c.IssuingCertificateURL {
+		if b.tried[u] {
+			continue
+		}
+		b.tried[u] = true
+		entry := AIAFetch{URL: u}
+		res, err := b.v.aia.FetchCertificates(b.ctx, u)
+		if err != nil {
+			entry.Error = err.Error()
+			b.log = append(b.log, entry)
+			continue
+		}
+		entry.Origin, entry.Warning = string(res.Origin), res.Warning
+		for _, cert := range res.Certificates {
+			entry.Certificates = append(entry.Certificates, cert.SubjectString())
+			if slices.ContainsFunc(b.pool, func(p candidate) bool { return p.cert.Fingerprint == cert.Fingerprint }) {
+				continue
+			}
+			b.pool = append(b.pool, candidate{cert: cert, src: SourceAIA})
+			added = true
+		}
+		b.log = append(b.log, entry)
+	}
+	return added
 }
 
 // issuers returns the pool certificates whose subject matches c's issuer,
@@ -262,7 +317,7 @@ func (v *Verifier) addHints(r *Report) {
 		vendor = v.store.VendorForManufacturer(r.TPM.Manufacturer)
 		if vendor == nil && r.Vendor == "" {
 			r.Hints = append(r.Hints, fmt.Sprintf("TPM manufacturer %q is not in the vendor store", r.TPM.Manufacturer))
-		} else if r.Vendor != "" && r.Vendor != vendor.ID {
+		} else if vendor != nil && r.Vendor != "" && r.Vendor != vendor.ID {
 			r.Hints = append(r.Hints, fmt.Sprintf("EK claims manufacturer %s (%s) but chains to vendor %s", r.TPM.Manufacturer, vendor.ID, r.Vendor))
 		}
 	}

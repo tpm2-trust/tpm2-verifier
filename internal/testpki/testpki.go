@@ -73,6 +73,7 @@ func (ca *CA) IssueCA(t testing.TB, name pkix.Name, extra ...pkix.Extension) *CA
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		IssuingCertificateURL: []string{AIAURL(ca.Cert)},
 		ExtraExtensions:       extra,
 	}
 	return &CA{create(t, tmpl, ca.Cert, k.Public(), ca.Key), k}
@@ -83,6 +84,9 @@ func (ca *CA) Issue(t testing.TB, tmpl *x509.Certificate) *x509.Certificate {
 	t.Helper()
 	if tmpl.SerialNumber == nil {
 		tmpl.SerialNumber = big.NewInt(serial.Add(1))
+	}
+	if tmpl.IssuingCertificateURL == nil {
+		tmpl.IssuingCertificateURL = []string{AIAURL(ca.Cert)}
 	}
 	return create(t, tmpl, ca.Cert, newKey(t).Public(), ca.Key)
 }
@@ -101,6 +105,11 @@ func (ca *CA) CRL(t testing.TB, number int64, thisUpdate, nextUpdate time.Time, 
 		t.Fatal(err)
 	}
 	return der
+}
+
+// AIAURL is the AIA "CA Issuers" URL under which issuer is published.
+func AIAURL(issuer *x509.Certificate) string {
+	return "https://aia.example/" + issuer.SerialNumber.String() + ".cer"
 }
 
 func mustMarshal(v any) []byte {

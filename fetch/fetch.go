@@ -1,14 +1,16 @@
-// Package fetch downloads CRLs named in CRL distribution points and keeps
-// them in a local cache.
+// Package fetch downloads CRLs named in CRL distribution points and issuer
+// certificates named in AIA "CA Issuers" entries, and keeps them in a local
+// cache.
 //
 // The cache mirrors the URL structure, so its content is easy to inspect:
 //
 //	<cache>/crls/tsci.intel.com/content/OnDieCA/crls/OnDie_CA_CSME_Indirect.crl
 //	<cache>/crls/tsci.intel.com/content/OnDieCA/crls/OnDie_CA_CSME_Indirect.crl.json  (metadata)
+//	<cache>/certs/tsci.intel.com/content/OnDieCA/certs/OnDie_CA_RootCA_Certificate.cer
 //
-// Fetched data is only parsed here. Signatures are verified by package
-// verify against the issuing CA, which is the only point where the issuer is
-// known; an unverified CRL in the cache is therefore harmless.
+// Fetched data is only parsed here. CRL signatures are verified by package
+// verify against the issuing CA, and fetched certificates are only ever used
+// as untrusted intermediates; trust comes from the vendor store alone.
 package fetch
 
 import (
@@ -65,8 +67,8 @@ type Meta struct {
 	LastModified string    `json:"last_modified,omitempty"`
 }
 
-// CRLFetcher downloads and caches CRLs. The zero value is not usable; use New.
-type CRLFetcher struct {
+// Fetcher downloads and caches CRLs and AIA issuer certificates. The zero value is not usable; use New.
+type Fetcher struct {
 	client   *http.Client
 	cacheDir string
 	maxAge   time.Duration
@@ -74,30 +76,29 @@ type CRLFetcher struct {
 	maxSize  int64
 	now      func() time.Time
 
-	mu       sync.Mutex
-	memo     map[string]*Result
-	memoErrs map[string]error
+	mu   sync.Mutex
+	memo map[string]memoEntry
 }
 
-// Option configures a CRLFetcher.
-type Option func(*CRLFetcher)
+// Option configures a Fetcher.
+type Option func(*Fetcher)
 
 // WithClient sets the HTTP client.
-func WithClient(c *http.Client) Option { return func(f *CRLFetcher) { f.client = c } }
+func WithClient(c *http.Client) Option { return func(f *Fetcher) { f.client = c } }
 
 // WithCacheDir sets the cache directory; "" disables caching.
-func WithCacheDir(dir string) Option { return func(f *CRLFetcher) { f.cacheDir = dir } }
+func WithCacheDir(dir string) Option { return func(f *Fetcher) { f.cacheDir = dir } }
 
 // WithMaxAge sets how long a cached CRL is used without asking the server
 // (default 24h). A CRL past its nextUpdate is always refreshed.
-func WithMaxAge(d time.Duration) Option { return func(f *CRLFetcher) { f.maxAge = d } }
+func WithMaxAge(d time.Duration) Option { return func(f *Fetcher) { f.maxAge = d } }
 
 // WithOffline uses the cache only.
-func WithOffline(offline bool) Option { return func(f *CRLFetcher) { f.offline = offline } }
+func WithOffline(offline bool) Option { return func(f *Fetcher) { f.offline = offline } }
 
 // WithTime fixes the clock (for tests).
 func WithTime(t time.Time) Option {
-	return func(f *CRLFetcher) { f.now = func() time.Time { return t } }
+	return func(f *Fetcher) { f.now = func() time.Time { return t } }
 }
 
 // DefaultCacheDir returns $XDG_CACHE_HOME/tpm2-verifier (%LocalAppData% on Windows).
@@ -109,15 +110,14 @@ func DefaultCacheDir() (string, error) {
 	return filepath.Join(d, "tpm2-verifier"), nil
 }
 
-// New returns a CRLFetcher. Without WithCacheDir nothing is cached.
-func New(opts ...Option) *CRLFetcher {
-	f := &CRLFetcher{
-		client:   &http.Client{Timeout: 20 * time.Second},
-		maxAge:   24 * time.Hour,
-		maxSize:  16 << 20,
-		now:      time.Now,
-		memo:     map[string]*Result{},
-		memoErrs: map[string]error{},
+// New returns a Fetcher. Without WithCacheDir nothing is cached.
+func New(opts ...Option) *Fetcher {
+	f := &Fetcher{
+		client:  &http.Client{Timeout: 20 * time.Second},
+		maxAge:  24 * time.Hour,
+		maxSize: 16 << 20,
+		now:     time.Now,
+		memo:    map[string]memoEntry{},
 	}
 	for _, o := range opts {
 		o(f)
@@ -125,27 +125,103 @@ func New(opts ...Option) *CRLFetcher {
 	return f
 }
 
-// FetchCRL returns the CRL at rawURL, from the cache or the network.
-// Results are memoized for the lifetime of the fetcher.
-func (f *CRLFetcher) FetchCRL(ctx context.Context, rawURL string) (*Result, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if r, ok := f.memo[rawURL]; ok {
-		return r, nil
-	}
-	if err, ok := f.memoErrs[rawURL]; ok {
-		return nil, err
-	}
-	r, err := f.fetch(ctx, rawURL)
-	if err != nil {
-		f.memoErrs[rawURL] = err
-		return nil, err
-	}
-	f.memo[rawURL] = r
-	return r, nil
+type memoEntry struct {
+	obj *object
+	err error
 }
 
-func (f *CRLFetcher) fetch(ctx context.Context, rawURL string) (*Result, error) {
+// object is a cached download of some kind.
+type object struct {
+	value     any
+	origin    Origin
+	fetchedAt time.Time
+	path      string
+	warning   string
+}
+
+// kind describes how one type of object is parsed and cached.
+type kind struct {
+	dir   string
+	name  string
+	parse func([]byte) (any, error)
+	// fresh reports whether a cached value may be used without asking the server.
+	fresh func(v any, now time.Time) bool
+	// rollback returns a reason if next must not replace cached.
+	rollback func(cached, next any) string
+}
+
+var crlKind = kind{
+	dir:  "crls",
+	name: "CRL",
+	parse: func(b []byte) (any, error) {
+		return certparse.ParseCRL(b)
+	},
+	fresh: func(v any, now time.Time) bool {
+		crl := v.(*certparse.CRL)
+		return crl.NextUpdate.IsZero() || now.Before(crl.NextUpdate)
+	},
+	rollback: func(cached, next any) string {
+		c, n := cached.(*certparse.CRL), next.(*certparse.CRL)
+		if certparse.SameName(c.RawIssuer, n.RawIssuer) && c.Number != nil && n.Number != nil && n.Number.Cmp(c.Number) < 0 {
+			return fmt.Sprintf("server returned older CRL #%s, keeping cached #%s", n.Number, c.Number)
+		}
+		return ""
+	},
+}
+
+var certKind = kind{
+	dir:  "certs",
+	name: "certificate",
+	parse: func(b []byte) (any, error) {
+		return certparse.ParseCertificatesAny(b)
+	},
+	fresh:    func(any, time.Time) bool { return true },
+	rollback: func(any, any) string { return "" },
+}
+
+// FetchCRL returns the CRL at rawURL, from the cache or the network.
+// Results are memoized for the lifetime of the fetcher.
+func (f *Fetcher) FetchCRL(ctx context.Context, rawURL string) (*Result, error) {
+	o, err := f.get(ctx, rawURL, crlKind)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{URL: rawURL, CRL: o.value.(*certparse.CRL), Origin: o.origin, FetchedAt: o.fetchedAt, Path: o.path, Warning: o.warning}, nil
+}
+
+// CertResult is the content of an AIA "CA Issuers" URL.
+type CertResult struct {
+	URL          string
+	Certificates []*certparse.Certificate
+	Origin       Origin
+	FetchedAt    time.Time
+	Path         string
+	Warning      string
+}
+
+// FetchCertificates returns the certificates published at an AIA "CA
+// Issuers" URL (DER, PEM or PKCS#7), from the cache or the network.
+func (f *Fetcher) FetchCertificates(ctx context.Context, rawURL string) (*CertResult, error) {
+	o, err := f.get(ctx, rawURL, certKind)
+	if err != nil {
+		return nil, err
+	}
+	return &CertResult{URL: rawURL, Certificates: o.value.([]*certparse.Certificate), Origin: o.origin, FetchedAt: o.fetchedAt, Path: o.path, Warning: o.warning}, nil
+}
+
+func (f *Fetcher) get(ctx context.Context, rawURL string, k kind) (*object, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := k.dir + " " + rawURL
+	if m, ok := f.memo[key]; ok {
+		return m.obj, m.err
+	}
+	o, err := f.fetch(ctx, rawURL, k)
+	f.memo[key] = memoEntry{o, err}
+	return o, err
+}
+
+func (f *Fetcher) fetch(ctx context.Context, rawURL string, k kind) (*object, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch: %w", err)
@@ -153,18 +229,18 @@ func (f *CRLFetcher) fetch(ctx context.Context, rawURL string) (*Result, error) 
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("fetch: unsupported scheme %q in %s", u.Scheme, rawURL)
 	}
-	var cached *Result
+	var cached *object
 	var meta *Meta
 	cachePath := ""
 	if f.cacheDir != "" {
-		cachePath = filepath.Join(f.cacheDir, "crls", CachePath(u))
-		cached, meta = loadCached(cachePath)
+		cachePath = filepath.Join(f.cacheDir, k.dir, CachePath(u))
+		cached, meta = loadCached(cachePath, k)
 	}
 	now := f.now()
 	if cached != nil {
-		fresh := now.Sub(meta.FetchedAt) < f.maxAge && (cached.CRL.NextUpdate.IsZero() || now.Before(cached.CRL.NextUpdate))
+		fresh := now.Sub(meta.FetchedAt) < f.maxAge && k.fresh(cached.value, now)
 		if f.offline || fresh {
-			cached.Origin = OriginCache
+			cached.origin = OriginCache
 			return cached, nil
 		}
 	}
@@ -175,8 +251,8 @@ func (f *CRLFetcher) fetch(ctx context.Context, rawURL string) (*Result, error) 
 	data, hdr, status, err := f.download(ctx, rawURL, meta)
 	if err != nil {
 		if cached != nil {
-			cached.Origin = OriginStaleCache
-			cached.Warning = fmt.Sprintf("download failed (%v), using copy fetched %s", err, meta.FetchedAt.Format(time.RFC3339))
+			cached.origin = OriginStaleCache
+			cached.warning = fmt.Sprintf("download failed (%v), using copy fetched %s", err, meta.FetchedAt.Format(time.RFC3339))
 			return cached, nil
 		}
 		return nil, err
@@ -184,26 +260,25 @@ func (f *CRLFetcher) fetch(ctx context.Context, rawURL string) (*Result, error) 
 	if status == http.StatusNotModified && cached != nil {
 		meta.FetchedAt = now
 		_ = writeMeta(cachePath, meta)
-		cached.Origin, cached.FetchedAt = OriginNotModified, now
+		cached.origin, cached.fetchedAt = OriginNotModified, now
 		return cached, nil
 	}
-	crl, err := certparse.ParseCRL(data)
+	v, err := k.parse(data)
 	if err != nil {
 		if cached != nil {
-			cached.Origin = OriginStaleCache
-			cached.Warning = fmt.Sprintf("downloaded data is not a CRL (%v), using cached copy", err)
+			cached.origin = OriginStaleCache
+			cached.warning = fmt.Sprintf("downloaded data is not a %s (%v), using cached copy", k.name, err)
 			return cached, nil
 		}
 		return nil, fmt.Errorf("fetch: %s: %w", rawURL, err)
 	}
-	// Do not let an older CRL replace a newer one (rollback).
-	if cached != nil && certparse.SameName(cached.CRL.RawIssuer, crl.RawIssuer) &&
-		cached.CRL.Number != nil && crl.Number != nil && crl.Number.Cmp(cached.CRL.Number) < 0 {
-		cached.Origin = OriginStaleCache
-		cached.Warning = fmt.Sprintf("server returned older CRL #%s, keeping cached #%s", crl.Number, cached.CRL.Number)
-		return cached, nil
+	if cached != nil {
+		if reason := k.rollback(cached.value, v); reason != "" {
+			cached.origin, cached.warning = OriginStaleCache, reason
+			return cached, nil
+		}
 	}
-	res := &Result{URL: rawURL, CRL: crl, Origin: OriginNetwork, FetchedAt: now}
+	o := &object{value: v, origin: OriginNetwork, fetchedAt: now}
 	if cachePath != "" {
 		sum := sha256.Sum256(data)
 		m := &Meta{URL: rawURL, FetchedAt: now, SHA256: hex.EncodeToString(sum[:]),
@@ -214,12 +289,12 @@ func (f *CRLFetcher) fetch(ctx context.Context, rawURL string) (*Result, error) 
 		if err := writeMeta(cachePath, m); err != nil {
 			return nil, fmt.Errorf("fetch: cache: %w", err)
 		}
-		res.Path = cachePath
+		o.path = cachePath
 	}
-	return res, nil
+	return o, nil
 }
 
-func (f *CRLFetcher) download(ctx context.Context, rawURL string, meta *Meta) ([]byte, http.Header, int, error) {
+func (f *Fetcher) download(ctx context.Context, rawURL string, meta *Meta) ([]byte, http.Header, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, nil, 0, err
@@ -289,12 +364,12 @@ func sanitize(s string) string {
 	return string(b)
 }
 
-func loadCached(p string) (*Result, *Meta) {
+func loadCached(p string, k kind) (*object, *Meta) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, nil
 	}
-	crl, err := certparse.ParseCRL(data)
+	v, err := k.parse(data)
 	if err != nil {
 		return nil, nil
 	}
@@ -302,7 +377,7 @@ func loadCached(p string) (*Result, *Meta) {
 	if raw, err := os.ReadFile(p + ".json"); err == nil {
 		_ = json.Unmarshal(raw, m)
 	}
-	return &Result{URL: m.URL, CRL: crl, FetchedAt: m.FetchedAt, Path: p}, m
+	return &object{value: v, fetchedAt: m.FetchedAt, path: p}, m
 }
 
 func writeMeta(p string, m *Meta) error {
@@ -345,7 +420,7 @@ type CacheEntry struct {
 }
 
 // List returns all cached CRLs.
-func (f *CRLFetcher) List() ([]CacheEntry, error) {
+func (f *Fetcher) List() ([]CacheEntry, error) {
 	if f.cacheDir == "" {
 		return nil, nil
 	}
@@ -358,18 +433,23 @@ func (f *CRLFetcher) List() ([]CacheEntry, error) {
 		if err != nil || d.IsDir() || strings.HasSuffix(p, ".json") || strings.HasPrefix(d.Name(), ".tmp-") {
 			return err
 		}
-		if r, m := loadCached(p); r != nil {
-			out = append(out, CacheEntry{Path: p, Meta: *m, CRL: r.CRL})
+		if o, m := loadCached(p, crlKind); o != nil {
+			out = append(out, CacheEntry{Path: p, Meta: *m, CRL: o.value.(*certparse.CRL)})
 		}
 		return nil
 	})
 	return out, err
 }
 
-// Clear removes all cached CRLs.
-func (f *CRLFetcher) Clear() error {
+// Clear removes all cached CRLs and certificates.
+func (f *Fetcher) Clear() error {
 	if f.cacheDir == "" {
 		return nil
 	}
-	return os.RemoveAll(filepath.Join(f.cacheDir, "crls"))
+	for _, k := range []kind{crlKind, certKind} {
+		if err := os.RemoveAll(filepath.Join(f.cacheDir, k.dir)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

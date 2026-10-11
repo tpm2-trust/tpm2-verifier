@@ -20,14 +20,14 @@ type crlFlags struct {
 func addCRLFlags(fs *flag.FlagSet) crlFlags {
 	def, _ := fetch.DefaultCacheDir()
 	return crlFlags{
-		noFetch:  fs.Bool("no-fetch", false, "do not fetch CRLs from the distribution points"),
-		offline:  fs.Bool("offline", false, "use cached CRLs only, no network access"),
-		cacheDir: fs.String("cache-dir", def, "CRL cache directory (empty disables the cache)"),
+		noFetch:  fs.Bool("no-fetch", false, "do not download CRLs (CDP) or issuer certificates (AIA)"),
+		offline:  fs.Bool("offline", false, "use cached CRLs and certificates only, no network access"),
+		cacheDir: fs.String("cache-dir", def, "cache directory for CRLs and certificates (empty disables the cache)"),
 	}
 }
 
 // fetcher returns nil if fetching is disabled.
-func (c crlFlags) fetcher() *fetch.CRLFetcher {
+func (c crlFlags) fetcher() *fetch.Fetcher {
 	if *c.noFetch {
 		return nil
 	}
@@ -41,10 +41,11 @@ func runCache(args []string, stdout io.Writer) error {
 
 Subcommands:
   list    list cached CRLs
-  clear   delete cached CRLs
+  clear   delete cached CRLs and AIA certificates
   path    print the cache directory
 
-CRLs fetched by verify and info are cached in %s/crls/<host>/<path>,
+CRLs (CDP) and issuer certificates (AIA) downloaded by verify, info and debug
+are cached in %[1]s/crls/<host>/<path> and %[1]s/certs/<host>/<path>,
 each with a .json file holding URL, fetch time and SHA-256.
 `, def)
 		return exitError(2)

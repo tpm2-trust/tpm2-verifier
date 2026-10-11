@@ -11,18 +11,32 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mrwiora/tpm2-verifier/bundle"
 	"github.com/mrwiora/tpm2-verifier/store"
 	"github.com/mrwiora/tpm2-verifier/tpm"
 	"github.com/mrwiora/tpm2-verifier/verify"
 )
 
 func addTPMFlag(fs *flag.FlagSet) *string {
-	return fs.String("tpm", "", "TPM to use: device:/dev/tpmrm0, swtpm:host=..,port=.., swtpm:path=.., tbs\n"+
+	return fs.String("tpm", "", "TPM to use: device:/dev/tpmrm0, swtpm:host=..,port=.., swtpm:path=.., tbs,\n"+
+		"bundle:<file> (replay a debug bundle)\n"+
 		"(default: $TPM2TOOLS_TCTI, else /dev/tpmrm0 or /dev/tpm0 on Linux, TBS on Windows)")
 }
 
+// openTPM opens a TPM by spec; "bundle:<file>" replays a debug bundle.
+func openTPM(spec string) (*tpm.TPM, error) {
+	if p, ok := strings.CutPrefix(spec, "bundle:"); ok {
+		b, err := bundle.Load(p)
+		if err != nil {
+			return nil, err
+		}
+		return tpm.New(b.Fake()), nil
+	}
+	return tpm.Open(spec)
+}
+
 func scanTPM(ctx context.Context, spec string) (*tpm.Scan, error) {
-	t, err := tpm.Open(spec)
+	t, err := openTPM(spec)
 	if err != nil {
 		if h := tpm.PermissionHint(err); h != "" {
 			return nil, fmt.Errorf("%w\n  hint: %s", err, h)
@@ -136,7 +150,7 @@ func revocationOpts(mode string, crlf crlFlags) ([]verify.Option, error) {
 	var opts []verify.Option
 	switch mode {
 	case "off":
-		return []verify.Option{verify.WithRevocation(verify.RevocationOff)}, nil
+		opts = append(opts, verify.WithRevocation(verify.RevocationOff))
 	case "best-effort":
 	case "require":
 		opts = append(opts, verify.WithRevocation(verify.RevocationRequire))
@@ -144,7 +158,7 @@ func revocationOpts(mode string, crlf crlFlags) ([]verify.Option, error) {
 		return nil, fmt.Errorf("invalid -revocation %q", mode)
 	}
 	if f := crlf.fetcher(); f != nil {
-		opts = append(opts, verify.WithCRLFetcher(f))
+		opts = append(opts, verify.WithCRLFetcher(f), verify.WithAIAFetcher(f))
 	}
 	return opts, nil
 }
@@ -201,9 +215,14 @@ func printInfo(w io.Writer, s *tpm.Scan, st *store.Store, results []ekResult, ve
 		}
 		return
 	}
+	trusted := true
 	for _, r := range results {
 		printReport(w, "EK certificate "+r.Index+" ("+r.Label+")", r.Report, verbose)
 		fmt.Fprintln(w)
+		trusted = trusted && r.Report.Status == verify.StatusTrusted
+	}
+	if !trusted {
+		fmt.Fprintf(w, "To analyze this TPM elsewhere or report an unknown vendor: tpm2-ek debug\n")
 	}
 }
 
