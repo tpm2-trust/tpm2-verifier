@@ -1,0 +1,9 @@
+# build output
+/tpm2-ek
+/dist/
+
+# device-specific material extracted from a local TPM (EK certs identify the device)
+/*.der
+/*.pem
+/*.crt
+/out/
