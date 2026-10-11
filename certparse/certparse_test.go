@@ -202,6 +202,8 @@ func TestDecodeManufacturer(t *testing.T) {
 		"id:49465800": "IFX",
 		"id:53544D20": "STM",
 		"Nuvoton":     "Nuvoton",
+		"id:00001014": "id:00001014", // swtpm: numeric vendor ID
+		"id:zz":       "id:zz",
 	} {
 		if got := certparse.DecodeManufacturer(in); got != want {
 			t.Errorf("%s: got %q, want %q", in, got, want)

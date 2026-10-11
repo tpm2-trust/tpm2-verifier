@@ -255,7 +255,9 @@ func tpmInfoFromAttributes(rdn pkix.RDNSequence) *TPMInfo {
 }
 
 // DecodeManufacturer turns the TCG encoding "id:494E5443" into "INTC".
-// Values that are not in that form are returned unchanged.
+// Values that are not in that form, or that do not decode to printable
+// ASCII (swtpm uses the numeric vendor ID "id:00001014"), are returned
+// unchanged.
 func DecodeManufacturer(s string) string {
 	h, ok := strings.CutPrefix(strings.ToLower(s), "id:")
 	if !ok {
@@ -265,7 +267,16 @@ func DecodeManufacturer(s string) string {
 	if err != nil {
 		return s
 	}
-	return NormalizeManufacturer(string(b))
+	id := NormalizeManufacturer(string(b))
+	if id == "" {
+		return s
+	}
+	for _, c := range []byte(id) {
+		if c < 0x20 || c > 0x7e {
+			return s
+		}
+	}
+	return id
 }
 
 // NormalizeManufacturer trims NUL bytes and spaces from a TPM manufacturer ID

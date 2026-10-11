@@ -56,6 +56,14 @@ type Revocation struct {
 	CRLIssuer string     `json:"crl_issuer,omitempty"`
 	CRLNumber string     `json:"crl_number,omitempty"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	// SignedBy is the SHA-256 fingerprint of the certificate whose key
+	// verified the CRL signature.
+	SignedBy string `json:"crl_signed_by,omitempty"`
+	// Source is "file" for CRLs passed by the caller, else the URL.
+	Source string `json:"source,omitempty"`
+	// Origin is the fetch origin (network, cache, ...) for fetched CRLs.
+	Origin  string `json:"origin,omitempty"`
+	Warning string `json:"warning,omitempty"`
 }
 
 // Link is one certificate of the chain.

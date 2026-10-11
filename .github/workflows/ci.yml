@@ -11,5 +11,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      - name: Install swtpm (TPM end-to-end tests)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y swtpm
       - run: go vet ./...
       - run: go test ./...

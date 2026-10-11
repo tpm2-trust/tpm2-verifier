@@ -17,12 +17,16 @@ import (
 )
 
 func runVerify(args []string, stdout io.Writer) error {
-	fs := newFlagSet("verify", "<ek-cert> [intermediates...]",
+	fs := newFlagSet("verify", "[<ek-cert> [intermediates...]]",
 		"Builds the chain from the EK certificate to a trust anchor of the vendor store\n"+
-			"and validates it. Intermediates are certificate files (DER, PEM or concatenated\n"+
-			"DER, e.g. the raw content of NV 0x01C00100). If the first file holds several\n"+
-			"certificates, the first one is the leaf and the others are intermediates.\n\n"+
+			"and validates it, including CRL revocation checks. CRLs are fetched from the\n"+
+			"distribution points and cached unless -no-fetch or -offline is given.\n\n"+
+			"Without files, the EK certificates and chain are read from the TPM (-tpm).\n"+
+			"Intermediates are certificate files (DER, PEM or concatenated DER, e.g. the\n"+
+			"raw content of NV 0x01C00100). If the first file holds several certificates,\n"+
+			"the first one is the leaf and the others are intermediates.\n\n"+
 			"Exit status: 0 trusted, 1 not trusted, 2 error.")
+	spec := addTPMFlag(fs)
 	var crlFiles, accept stringList
 	fs.Var(&crlFiles, "crl", "CRL file for revocation checks (repeatable)")
 	fs.Var(&accept, "accept-critical", "accept this critical extension OID on any certificate (repeatable)")
@@ -31,28 +35,18 @@ func runVerify(args []string, stdout io.Writer) error {
 	asJSON := fs.Bool("json", false, "JSON output")
 	verbose := fs.Bool("v", false, "show fingerprints, quirks and revocation details")
 	overlay := fs.String("store", "", "additional vendor store directory")
+	crlf := addCRLFlags(fs)
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) == 0 {
-		fs.Usage()
-		return exitError(2)
-	}
-
 	st, err := loadStore(*overlay)
 	if err != nil {
 		return err
 	}
-	opts := []verify.Option{}
-	switch *revMode {
-	case "off":
-		opts = append(opts, verify.WithRevocation(verify.RevocationOff))
-	case "best-effort":
-	case "require":
-		opts = append(opts, verify.WithRevocation(verify.RevocationRequire))
-	default:
-		return fmt.Errorf("invalid -revocation %q", *revMode)
+	opts, err := revocationOpts(*revMode, crlf)
+	if err != nil {
+		return err
 	}
 	if *at != "" {
 		t, err := time.Parse(time.RFC3339, *at)
@@ -78,6 +72,10 @@ func runVerify(args []string, stdout io.Writer) error {
 			return err
 		}
 		opts = append(opts, verify.WithAcceptedCriticalExtensions(oid))
+	}
+
+	if len(pos) == 0 {
+		return verifyFromTPM(*spec, st, opts, *asJSON, *verbose, stdout)
 	}
 
 	var certs []*certparse.Certificate
@@ -143,13 +141,7 @@ func printReport(w io.Writer, name string, r *verify.Report, verbose bool) {
 			for _, q := range l.Quirks {
 				fmt.Fprintf(w, "           quirk: %s: %s\n", q.Code, q.Detail)
 			}
-			if l.Revocation.Detail != "" {
-				fmt.Fprintf(w, "           revocation: %s", l.Revocation.Detail)
-				if l.Revocation.CRLIssuer != "" {
-					fmt.Fprintf(w, " (CRL #%s by %s)", l.Revocation.CRLNumber, l.Revocation.CRLIssuer)
-				}
-				fmt.Fprintln(w)
-			}
+			printRevocation(w, l.Revocation)
 		}
 		for _, p := range l.Problems {
 			fmt.Fprintf(w, "           problem: %s\n", p)
@@ -161,6 +153,63 @@ func printReport(w io.Writer, name string, r *verify.Report, verbose bool) {
 	for _, h := range r.Hints {
 		fmt.Fprintf(w, "Hint: %s\n", h)
 	}
+}
+
+func verifyFromTPM(spec string, st *store.Store, opts []verify.Option, asJSON, verbose bool, stdout io.Writer) error {
+	ctx := context.Background()
+	s, err := scanTPM(ctx, spec)
+	if err != nil {
+		return err
+	}
+	results, err := verifyScan(ctx, s, st, opts)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(results); err != nil {
+			return err
+		}
+	} else {
+		if len(results) == 0 {
+			fmt.Fprintln(stdout, "No EK certificate found in the TPM.")
+		}
+		for i, r := range results {
+			if i > 0 {
+				fmt.Fprintln(stdout)
+			}
+			printReport(stdout, "TPM "+r.Index+" ("+r.Label+")", r.Report, verbose)
+		}
+	}
+	return resultsExit(results)
+}
+
+func printRevocation(w io.Writer, rv verify.Revocation) {
+	if rv.Detail == "" {
+		return
+	}
+	fmt.Fprintf(w, "           revocation: %s\n", rv.Detail)
+	if rv.CRLIssuer != "" {
+		fmt.Fprintf(w, "           CRL #%s by %s, signature verified with %s\n", rv.CRLNumber, rv.CRLIssuer, short(rv.SignedBy))
+	}
+	if rv.Source != "" {
+		src := rv.Source
+		if rv.Origin != "" {
+			src += " (" + rv.Origin + ")"
+		}
+		fmt.Fprintf(w, "           CRL source: %s\n", src)
+	}
+	if rv.Warning != "" {
+		fmt.Fprintf(w, "           warning: %s\n", rv.Warning)
+	}
+}
+
+func short(fp string) string {
+	if len(fp) > 16 {
+		return fp[:16] + "..."
+	}
+	return fp
 }
 
 func loadStore(overlay string) (*store.Store, error) {

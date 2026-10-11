@@ -32,10 +32,13 @@ type command struct {
 
 func commands() []command {
 	return []command{
+		{"info", "show TPM vendor, NV certificates and EK verification in one go", runInfo},
+		{"export", "export EK certificates, chain and vendor CAs from the TPM to files", runExport},
 		{"inspect", "show details of certificates and CRLs (DER, PEM or concatenated DER)", runInspect},
 		{"split", "split a concatenated DER chain (e.g. NV 0x01C00100) into files", runSplit},
-		{"verify", "verify an EK certificate against the vendor store", runVerify},
+		{"verify", "verify EK certificates (from the TPM or files) against the vendor store", runVerify},
 		{"store", "list, show and export the vendor trust store", runStore},
+		{"cache", "list or clear the CRL cache", runCache},
 		{"version", "print the version", runVersion},
 	}
 }

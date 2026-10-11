@@ -6,11 +6,10 @@ curated, fingerprint-pinned store of TPM vendor root CAs.
 
 It is the Go successor of [intel-ek-dechainer](https://github.com/mrwiora/intel-ek-dechainer)
 and does everything it did (split the per-device chain from NV, verify against
-the Intel OnDie CA) for any vendor, plus CRL checks including indirect CRLs.
-
-> **Status:** phases 0 and 1 of the roadmap are done: vendor store, parsing and
-> offline verification of files. Reading the TPM directly is next; until then,
-> read the NV indices with tpm2-tools as described [below](#the-manual-way-tpm2-tools-and-openssl).
+the Intel OnDie CA) for any vendor. It also reads the TPM directly, and checks
+every certificate of the chain against the CRLs named in its distribution
+points, including indirect CRLs. CRLs are cached locally, and their
+signatures are verified.
 
 ## Install
 
@@ -23,27 +22,44 @@ No cgo, no openssl needed. Linux first; it builds and runs on Windows too.
 ## CLI
 
 ```bash
-# Read the EK certificate and the Intel per-device chain (see the manual section)
-tpm2_nvread -C o -o ek.der 0x01C00002
-tpm2_nvread -C o -o chain.der 0x01C00100
+# Everything in one go: vendor, firmware, all NV indices, every EK certificate
+# verified up to the vendor root, every CA checked against its CRL
+tpm2-ek info            # -v for attributes, fingerprints, CRL details; -json
 
-# Verify in one step: EK -> NV chain -> store intermediates -> store root
+tpm2-ek verify          # only the verification of the EK certificates in the TPM
+tpm2-ek export -o out   # EK certs, chain, raw NV, vendor CAs + matching openssl command
+
+# The same for files, e.g. read with tpm2-tools (see the manual section)
 tpm2-ek verify ek.der chain.der
-
-# ... with revocation checks against downloaded CRLs (fetching is on the roadmap)
-tpm2-ek verify -v -revocation require -crl OnDie_CA.crl -crl OnDie_CA_CSME_Product.crl \
-  -crl MCC_00001881_OnDie_CA.crl -crl OnDie_CA_CSME_Indirect.crl ek.der chain.der
-
 tpm2-ek inspect ek.der chain.der some.crl   # details, AIA/CDP URLs, TCG quirks, store matches
 tpm2-ek split -o out chain.der              # one file per certificate
 tpm2-ek split -p intel-int -s 3 chain.der   # intel-ek-dechainer naming: intel-int3..5.der
+
 tpm2-ek store list | show intel | export -o certs
+tpm2-ek cache list | clear | path
 ```
 
-Example output:
+Reading the TPM needs access to `/dev/tpmrm0` (root or the `tss` group).
+`-tpm` selects another TPM, using the TCTI syntax of tpm2-tools
+(`TPM2TOOLS_TCTI` is honored too):
+
+| `-tpm` | TPM |
+|--------|-----|
+| (empty) | `/dev/tpmrm0`, falling back to `/dev/tpm0`; TBS on Windows |
+| `device:/dev/tpm0` | a TPM character device |
+| `swtpm:host=localhost,port=2321` | [swtpm](https://github.com/stefanberger/swtpm) with `--server type=tcp` |
+| `swtpm:path=/run/swtpm.sock` | swtpm with `--server type=unixio` |
+
+Only public data is read and no secrets are used: indices are read with
+owner authorization and an empty password (if `ownerread` is set), or with
+index authorization only if `no_da` is set, so a TPM can never be pushed
+towards dictionary attack lockout. Only the TCG range `0x01C00000-0x01C0FFFF`
+is read; other indices are only listed.
+
+Expected output of `tpm2-ek verify` on an Intel PTT machine (format illustration):
 
 ```
-ek.der: TRUSTED (vendor intel)
+TPM 0x01C00002 (ek-certificate RSA 2048 (low)): TRUSTED (vendor intel)
 TPM: manufacturer INTC, model "...", version ...
 Chain:
   depth=0: <empty> [leaf] revocation=good
@@ -55,30 +71,74 @@ Chain:
   depth=6: CN=www.intel.com,OU=OnDie CA Root Cert Signing,... [store:intel/roots/ondie-ca-root.der, trust anchor]
 ```
 
-`verify` exits with 0 if trusted, 1 if not (`untrusted-root`, `incomplete`,
-`revoked`, `invalid`) and 2 on errors. `-json` prints a machine readable report.
+`verify` and `info` exit with 0 if trusted, 1 if not (`untrusted-root`,
+`incomplete`, `revoked`, `invalid`, or no EK certificate) and 2 on errors.
+
+### Revocation and the CRL cache
+
+Each certificate of the chain (except the trust anchor) is checked against the
+CRL named in its CRL distribution point. The CRL's signature is verified with
+the CA that issued it, which must be in the verified chain or in the vendor
+store. For an indirect CRL, that CA is the one named as `cRLIssuer`. A CRL that
+cannot be verified is not used, and a CRL past its `nextUpdate` counts as stale.
+
+| `-revocation` | Effect |
+|---------------|--------|
+| `best-effort` (default) | revoked certificates fail; unknown status is reported only |
+| `require` | unknown status (no CRL, stale, bad signature) also fails |
+| `off` | no checks |
+
+Downloaded CRLs are cached in `~/.cache/tpm2-verifier/crls/` (Windows:
+`%LocalAppData%\tpm2-verifier\crls`). The folder layout mirrors the URL, and a
+`.json` file next to each CRL records the URL, fetch time and SHA-256:
+
+```
+~/.cache/tpm2-verifier/crls/tsci.intel.com/content/OnDieCA/crls/OnDie_CA_CSME_Indirect.crl
+~/.cache/tpm2-verifier/crls/tsci.intel.com/content/OnDieCA/crls/OnDie_CA_CSME_Indirect.crl.json
+```
+
+A cached CRL is reused for 24 hours and refetched sooner if its `nextUpdate` has passed (with
+`If-None-Match`/`If-Modified-Since`). If the download fails, the cached copy
+is used with a warning. A CRL with a lower CRL number never replaces a newer
+cached one. `-offline` uses the cache only, `-no-fetch` disables fetching,
+`-crl file` adds local CRLs.
 
 ## Library
 
 ```go
 import (
-	"github.com/mrwiora/tpm2-verifier/certparse"
+	"github.com/mrwiora/tpm2-verifier/fetch"
 	"github.com/mrwiora/tpm2-verifier/store"
+	"github.com/mrwiora/tpm2-verifier/tpm"
 	"github.com/mrwiora/tpm2-verifier/verify"
 )
 
-st, _ := store.Default()                 // embedded vendors + local overlay
-ek, _ := certparse.Parse(ekDER)          // TCG aware: ek.TPM.Manufacturer == "INTC"
-chain, _ := certparse.ParseAll(nvChain)  // concatenated DER from NV 0x01C00100, padding ignored
-crl, _ := certparse.ParseCRL(crlDER)     // handles indirect CRLs
+t, _ := tpm.Open("")                      // /dev/tpmrm0, TBS, or a TCTI spec
+defer t.Close()
+scan, _ := t.Scan(ctx)                    // identity + all TCG NV indices, parsed
+fmt.Println(scan.Info.Manufacturer)       // "INTC"
 
-rep, _ := verify.New(st, verify.WithCRLs(crl)).Verify(ctx, ek, chain)
-if rep.Status == verify.StatusTrusted { /* rep.Vendor == "intel" */ }
-for _, l := range rep.Chain { fmt.Println(l.Subject, l.Source, l.Revocation.Status) }
+st, _ := store.Default()                  // embedded vendors + local overlay
+cacheDir, _ := fetch.DefaultCacheDir()
+v := verify.New(st, verify.WithCRLFetcher(fetch.New(fetch.WithCacheDir(cacheDir))))
+
+for _, ek := range scan.EKCertificates() {
+	rep, _ := v.Verify(ctx, ek.Certificates[0], scan.ChainCertificates())
+	fmt.Println(tpm.HexIndex(ek.Index), rep.Status, rep.Vendor) // 0x01C00002 trusted intel
+	for _, l := range rep.Chain {
+		fmt.Println(l.Subject, l.Source, l.Revocation.Status, l.Revocation.Source)
+	}
+}
 ```
+
+Files instead of a TPM: `certparse.Parse(ekDER)`, `certparse.ParseAll(chainBlob)`
+(concatenated DER, padding ignored), `certparse.ParseCRL(crlDER)` and
+`verify.WithCRLs(...)`. `tpm.Fake` is an in-memory TPM for tests.
 
 | Package     | Purpose |
 |-------------|---------|
+| `tpm`       | Reads TPM properties and NV indices (go-tpm, pure Go): Linux device, Windows TBS, swtpm; NV index labels; `Fake` backend |
+| `fetch`     | Downloads CRLs from distribution points into the local cache |
 | `certparse` | DER chain splitting, certificate parsing with TCG extensions (critical subjectAltName with TPM identity, EK EKU), CRL distribution points with `cRLIssuer`, indirect CRLs, SHA-1 signatures of legacy vendor PKIs |
 | `store`     | Loads and validates the vendor trust store (fingerprints, root self-signature, CA flag) |
 | `verify`    | Chain building and validation with a per-link report: signature, validity, path length, critical extensions, revocation |
@@ -175,6 +235,7 @@ TCG EK Credential Profile indices:
 | `0x01C0001A` | ECC SM2 P-256 EK certificate (H-5) |
 | `0x01C0001C` / `0x01C0001E` | RSA 3072 / RSA 4096 EK certificate (H-6 / H-7) |
 | `0x01C00100` - `0x01C001FF` | EK certificate chain: concatenated DER intermediates (Intel uses `0x01C00100`) |
+| `0x01C08000` - `0x01C0FFFF` | Platform certificates |
 
 ### 4. Read the EK certificate(s)
 
@@ -278,9 +339,10 @@ openssl verify -show_chain -crl_check_all -extended_crl \
 |-------|---------|-------|
 | 0 | Repository, vendor store format, Intel migrated | done |
 | 1 | `certparse` + `verify`, offline verification of files, CLI `inspect`/`split`/`verify`/`store` | done |
-| 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS): `tpm2-ek info` / `export` in one shot | next |
-| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable as a fake TPM for tests | |
-| 4 | Online: walk AIA up to the root, fetch CRLs from CDPs, cache | |
+| 1b | CRLs fetched from the distribution points, signature checked, cached locally | done |
+| 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS, swtpm): `tpm2-ek info` / `verify` / `export` | done |
+| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable as a fake TPM for tests | next |
+| 4 | Walk AIA up to the root for vendors without a stored chain | |
 | 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | |
 
 ## Development
@@ -289,11 +351,19 @@ openssl verify -show_chain -crl_check_all -extended_crl \
 go test ./...
 ```
 
-Tests run without a TPM: the Intel root and static intermediates and Intel's
-published CRLs (`testdata/intel/crls`) are used as real-world fixtures, and
-`internal/testpki` generates a synthetic hierarchy with the same shape as
-Intel's (seven levels, empty EK subject, critical TCG subjectAltName, indirect
-CRL). Real EK certificates identify a device, so they are not committed.
+Tests need no hardware TPM:
+
+- the Intel root and static intermediates and Intel's published CRLs
+  (`testdata/intel/crls`) are real-world fixtures,
+- `internal/testpki` generates a synthetic hierarchy with the same shape as
+  Intel's (seven levels, empty EK subject, critical TCG subjectAltName,
+  indirect CRL),
+- if [swtpm](https://github.com/stefanberger/swtpm) is installed, the TPM
+  code is tested against it end to end (provisioned NV indices, chunked
+  reads, authorization rules, `info`/`verify`/`export`); otherwise those
+  tests are skipped.
+
+Real EK certificates identify a device, so they are not committed.
 
 ## License
 

@@ -1,6 +1,7 @@
 package verify_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -8,6 +9,8 @@ import (
 	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"time"
 
 	"github.com/mrwiora/tpm2-verifier/certparse"
+	"github.com/mrwiora/tpm2-verifier/fetch"
 	"github.com/mrwiora/tpm2-verifier/internal/testpki"
 	"github.com/mrwiora/tpm2-verifier/store"
 	"github.com/mrwiora/tpm2-verifier/verify"
@@ -270,4 +274,80 @@ func TestVendorCriticalExtension(t *testing.T) {
 	r, _ = verify.New(testStore(t, pki, "accepted_critical_extensions: [1.2.840.113741.1.5.5.1.1]\n"), verify.WithTime(pki.Now)).
 		Verify(ctx, mustParse(t, pki.EK.Raw), mustParseAll(t, pki.DeviceChain()))
 	wantStatus(t, r, verify.StatusTrusted)
+}
+
+// crlTransport serves CRLs by URL without network access.
+type crlTransport map[string][]byte
+
+func (m crlTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	body, ok := m[r.URL.String()]
+	if !ok {
+		return &http.Response{StatusCode: http.StatusNotFound, Status: "404 Not Found", Body: io.NopCloser(bytes.NewReader(nil)), Request: r}, nil
+	}
+	return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}, Request: r}, nil
+}
+
+func fetcherFor(t *testing.T, pki *testpki.IntelChain, crls map[string][]byte) *fetch.CRLFetcher {
+	return fetch.New(fetch.WithClient(&http.Client{Transport: crlTransport(crls)}),
+		fetch.WithCacheDir(t.TempDir()), fetch.WithTime(pki.Now))
+}
+
+func TestFetchedCRLs(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	v := verify.New(testStore(t, pki, ""), verify.WithTime(pki.Now), verify.WithRevocation(verify.RevocationRequire),
+		verify.WithCRLFetcher(fetcherFor(t, pki, pki.CRLs(t))))
+	r, _ := v.Verify(ctx, mustParse(t, pki.EK.Raw), mustParseAll(t, pki.DeviceChain()))
+	wantStatus(t, r, verify.StatusTrusted)
+	ek := r.Chain[0].Revocation
+	if ek.Source != testpki.URLIndirectCRL || ek.Origin != "network" || ek.SignedBy != mustParse(t, pki.Int1.Cert.Raw).Fingerprint {
+		t.Errorf("EK revocation %+v", ek)
+	}
+	// Every non-anchor certificate was checked against a fetched CRL.
+	for _, l := range r.Chain[:6] {
+		if l.Revocation.Status != verify.RevocationGood || !strings.HasPrefix(l.Revocation.Source, "https://") {
+			t.Errorf("%s: %+v", l.Subject, l.Revocation)
+		}
+	}
+}
+
+func TestFetchedCRLRevoked(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	v := verify.New(testStore(t, pki, ""), verify.WithTime(pki.Now),
+		verify.WithCRLFetcher(fetcherFor(t, pki, pki.CRLs(t, pki.ROM.Cert))))
+	r, _ := v.Verify(ctx, mustParse(t, pki.EK.Raw), mustParseAll(t, pki.DeviceChain()))
+	wantStatus(t, r, verify.StatusRevoked)
+	if r.Chain[3].Revocation.Status != verify.RevocationRevoked {
+		t.Errorf("ROM CA: %+v", r.Chain[3].Revocation)
+	}
+}
+
+func TestTamperedCRLSignatureRejected(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	crls := pki.CRLs(t)
+	bad := bytes.Clone(crls[testpki.URLIndirectCRL])
+	bad[len(bad)-3] ^= 0x01 // inside the signature value
+	crls[testpki.URLIndirectCRL] = bad
+
+	v := verify.New(testStore(t, pki, ""), verify.WithTime(pki.Now), verify.WithRevocation(verify.RevocationRequire),
+		verify.WithCRLFetcher(fetcherFor(t, pki, crls)))
+	r, _ := v.Verify(ctx, mustParse(t, pki.EK.Raw), mustParseAll(t, pki.DeviceChain()))
+	wantStatus(t, r, verify.StatusInvalid)
+	ek := r.Chain[0].Revocation
+	if ek.Status != verify.RevocationUnknown || !strings.Contains(ek.Detail, "signature verification failed") {
+		t.Errorf("EK revocation %+v", ek)
+	}
+	if r.Chain[3].Revocation.Status != verify.RevocationGood {
+		t.Errorf("ROM CA (direct CRL) should still be good: %+v", r.Chain[3].Revocation)
+	}
+}
+
+func TestCRLDownloadFailure(t *testing.T) {
+	pki := testpki.IntelLike(t)
+	v := verify.New(testStore(t, pki, ""), verify.WithTime(pki.Now),
+		verify.WithCRLFetcher(fetcherFor(t, pki, map[string][]byte{})))
+	r, _ := v.Verify(ctx, mustParse(t, pki.EK.Raw), mustParseAll(t, pki.DeviceChain()))
+	wantStatus(t, r, verify.StatusTrusted) // best effort
+	if d := r.Chain[0].Revocation.Detail; !strings.Contains(d, "404") {
+		t.Errorf("detail %q", d)
+	}
 }

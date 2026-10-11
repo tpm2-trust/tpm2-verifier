@@ -68,7 +68,7 @@ func write(t *testing.T, path string, data []byte) string {
 }
 
 func (f *fixture) verifyArgs(extra ...string) []string {
-	args := []string{"verify", "-store", f.store, "-time", f.pki.Now.Format("2006-01-02T15:04:05Z")}
+	args := []string{"verify", "-no-fetch", "-store", f.store, "-time", f.pki.Now.Format("2006-01-02T15:04:05Z")}
 	for _, c := range f.crls {
 		args = append(args, "-crl", c)
 	}
@@ -141,7 +141,7 @@ func TestVerifyRevokedJSON(t *testing.T) {
 
 func TestVerifyIncomplete(t *testing.T) {
 	f := newFixture(t, false)
-	code, stdout, _ := runCLI("verify", "-store", f.store, f.ek)
+	code, stdout, _ := runCLI("verify", "-no-fetch", "-store", f.store, f.ek)
 	if code != 1 || !strings.Contains(stdout, "INCOMPLETE") {
 		t.Fatalf("exit %d\n%s", code, stdout)
 	}

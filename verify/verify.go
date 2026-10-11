@@ -41,6 +41,7 @@ type Verifier struct {
 	store    *store.Store
 	now      func() time.Time
 	crls     []*certparse.CRL
+	fetcher  CRLFetcher
 	mode     RevocationMode
 	accepted []asn1.ObjectIdentifier
 }
@@ -55,6 +56,10 @@ func WithTime(t time.Time) Option { return func(v *Verifier) { v.now = func() ti
 func WithCRLs(crls ...*certparse.CRL) Option {
 	return func(v *Verifier) { v.crls = append(v.crls, crls...) }
 }
+
+// WithCRLFetcher fetches CRLs from the distribution points of the
+// certificates when no CRL passed with WithCRLs applies.
+func WithCRLFetcher(f CRLFetcher) Option { return func(v *Verifier) { v.fetcher = f } }
 
 // WithRevocation sets the revocation mode.
 func WithRevocation(m RevocationMode) Option { return func(v *Verifier) { v.mode = m } }
@@ -108,8 +113,8 @@ func (v *Verifier) Verify(ctx context.Context, leaf *certparse.Certificate, inte
 
 	v.checkLinks(r, now)
 	// Without CRLs best effort has nothing to report.
-	if v.mode == RevocationRequire || (v.mode == RevocationBestEffort && len(v.crls) > 0) {
-		v.checkRevocation(r, pool, now)
+	if v.mode == RevocationRequire || (v.mode == RevocationBestEffort && (len(v.crls) > 0 || v.fetcher != nil)) {
+		v.checkRevocation(ctx, r, pool, now)
 	}
 	v.addHints(r)
 	return r, nil
@@ -255,7 +260,7 @@ func (v *Verifier) addHints(r *Report) {
 	var vendor *store.Vendor
 	if r.TPM != nil && r.TPM.Manufacturer != "" {
 		vendor = v.store.VendorForManufacturer(r.TPM.Manufacturer)
-		if vendor == nil {
+		if vendor == nil && r.Vendor == "" {
 			r.Hints = append(r.Hints, fmt.Sprintf("TPM manufacturer %q is not in the vendor store", r.TPM.Manufacturer))
 		} else if r.Vendor != "" && r.Vendor != vendor.ID {
 			r.Hints = append(r.Hints, fmt.Sprintf("EK claims manufacturer %s (%s) but chains to vendor %s", r.TPM.Manufacturer, vendor.ID, r.Vendor))

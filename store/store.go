@@ -35,10 +35,11 @@ const (
 
 // Entry is one certificate of a vendor.
 type Entry struct {
-	File      string `yaml:"file"`
-	Role      Role   `yaml:"role"`
-	Subject   string `yaml:"subject,omitempty"`
-	Source    string `yaml:"source,omitempty"`
+	File    string `yaml:"file"`
+	Role    Role   `yaml:"role"`
+	Subject string `yaml:"subject,omitempty"`
+	Source  string `yaml:"source,omitempty"`
+	// SHA256 is the fingerprint of the DER encoding (also for PEM files).
 	SHA256    string `yaml:"sha256"`
 	Retrieved string `yaml:"retrieved,omitempty"`
 
@@ -224,14 +225,18 @@ func loadVendor(fsys fs.FS, dir, origin string) (*Vendor, error) {
 }
 
 func (e *Entry) load(fsys fs.FS, dir, origin string, v *Vendor) error {
-	der, err := fs.ReadFile(fsys, path.Join(dir, e.File))
+	data, err := fs.ReadFile(fsys, path.Join(dir, e.File))
 	if err != nil {
 		return err
 	}
-	c, err := certparse.Parse(der)
+	certs, err := certparse.ParseAll(data) // DER or PEM
 	if err != nil {
 		return err
 	}
+	if len(certs) != 1 {
+		return fmt.Errorf("expected one certificate, found %d", len(certs))
+	}
+	c := certs[0]
 	if !strings.EqualFold(c.Fingerprint, e.SHA256) {
 		return fmt.Errorf("sha256 mismatch: manifest %s, file %s", e.SHA256, c.Fingerprint)
 	}
