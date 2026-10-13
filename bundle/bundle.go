@@ -189,3 +189,8 @@ func (b *Bundle) Fake() *tpm.Fake {
 func (b *Bundle) sortNV() {
 	sort.Slice(b.NV, func(i, j int) bool { return b.NV[i].index < b.NV[j].index })
 }
+
+// PlatformInfo returns the kernel release and the platform information a
+// bundle records: TPM sysfs attributes and DMI vendor/model strings (no
+// serial numbers or UUIDs).
+func PlatformInfo() (kernel string, info map[string]string) { return platformInfo() }

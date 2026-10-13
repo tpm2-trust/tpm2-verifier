@@ -35,6 +35,7 @@ func commands() []command {
 		{"info", "show TPM vendor, NV certificates and EK verification in one go", runInfo},
 		{"export", "export EK certificates, chain and vendor CAs from the TPM to files", runExport},
 		{"debug", "write a debug bundle of the TPM (for unknown vendors and bug reports)", runDebug},
+		{"debug-anon", "collect what is needed to add the TPM vendor, without identifying data", runDebugAnon},
 		{"inspect", "show details of certificates and CRLs (DER, PEM or concatenated DER)", runInspect},
 		{"split", "split a concatenated DER chain (e.g. NV 0x01C00100) into files", runSplit},
 		{"verify", "verify EK certificates (from the TPM or files) against the vendor store", runVerify},
@@ -47,7 +48,7 @@ func commands() []command {
 func usage(w io.Writer) {
 	fmt.Fprintf(w, "Usage: tpm2-ek <command> [flags] [args]\n\nCommands:\n")
 	for _, c := range commands() {
-		fmt.Fprintf(w, "  %-9s %s\n", c.name, c.summary)
+		fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
 	}
 	fmt.Fprintf(w, "\nRun 'tpm2-ek <command> -h' for the flags of a command.\n")
 }

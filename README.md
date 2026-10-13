@@ -30,6 +30,7 @@ tpm2-ek info            # -v for attributes, fingerprints, CRL details; -json
 tpm2-ek verify          # only the verification of the EK certificates in the TPM
 tpm2-ek export -o out   # EK certs, chain, raw NV, vendor CAs + matching openssl command
 tpm2-ek debug           # debug bundle for unknown vendors / bug reports (see below)
+tpm2-ek debug-anon      # what is needed to add the vendor, without identifying data
 
 # The same for files, e.g. read with tpm2-tools (see the manual section)
 tpm2-ek verify ek.der chain.der
@@ -136,8 +137,44 @@ another machine exactly as if it were attached:
 | `analysis/chains/<index>/<depth>-<source>.der` | every certificate of each EK chain, including those downloaded via AIA |
 
 **Privacy:** the EK certificate uniquely identifies the TPM and thus the
-machine. Share bundles only with people you trust with that. No secrets,
-keys or measurements are included.
+machine. Share bundles only with people you trust with that, or use
+`debug-anon`. No secrets, keys or measurements are included.
+
+### Adding a vendor without revealing the TPM (`debug-anon`)
+
+```bash
+sudo tpm2-ek debug-anon -o ifx            # directory; .tar.gz/.tgz writes an archive
+tpm2-ek info -store ifx/vendor            # try the draft vendor directory
+tpm2-ek debug-anon -tpm bundle:debug.tar.gz -o ifx.tar.gz   # from an existing bundle
+```
+
+`debug-anon` collects only what is needed to build the vendor directory. It
+is not replayable, and nothing in it is unique to the TPM:
+
+| File | Content |
+|------|---------|
+| `info.json` | TPM manufacturer, vendor string, firmware, spec; NV layout (index, attributes, size, readability) without content; per EK the verification status and chain |
+| `certs/<sha256>.der` | the public CA certificates of the chains: from the vendor store or downloaded via AIA |
+| `vendor/<id>/` | draft `vendor.yaml`, `README.md` (TPM, NV layout, hierarchy, quirks), `roots/`, `intermediates/` |
+
+Certificates that are not public (the EK and per-device CAs) are only
+described by their structure: key and signature algorithm, serial number
+length, validity in days, CA flag, key usages, extensions (OID and critical
+flag, no values), CRL/AIA/OCSP URLs, policies, TCG TPM attributes and quirks.
+Their serial number, key, signature, key identifiers, fingerprint and dates
+are not written. In their names, all values except C, O and TCG attributes
+are replaced by `REDACTED` for the EK; for CAs only serialNumber, UID and
+e-mail values and runs of 8+ hex digits (`-strict`: all values except C and O).
+The issuer name of the last device specific CA is kept, as it names the
+vendor CA to look for. The NV content (EK, chain, nonce, templates, platform
+certificates) is not included.
+
+A certificate counts as public if it is in the vendor store or published at
+the AIA URL of a certificate in the chain. A vendor CA stored in NV and
+published nowhere looks device specific; if you know it is shared by all
+devices, include it with `-include <sha256>` (the fingerprints are printed,
+not written). `-platform` adds the DMI vendor/model strings (no BIOS, no
+serials).
 
 Bundles are also test fixtures: every bundle in `testdata/bundles/` is
 replayed by the tests and must still produce the status recorded in it.
@@ -179,6 +216,7 @@ Files instead of a TPM: `certparse.Parse(ekDER)`, `certparse.ParseAll(chainBlob)
 | Package     | Purpose |
 |-------------|---------|
 | `bundle`    | Records a TPM into a debug bundle and replays it as a `tpm.Fake` |
+| `vendorinfo` | Collects the non-identifying information to add a vendor (`debug-anon`), with a draft vendor directory |
 | `tpm`       | Reads TPM properties and NV indices (go-tpm, pure Go): Linux device, Windows TBS, swtpm; NV index labels; `Fake` backend |
 | `fetch`     | Downloads CRLs (CDP) and issuer certificates (AIA) into the local cache |
 | `certparse` | DER chain splitting, certificate parsing with TCG extensions (critical subjectAltName with TPM identity, EK EKU), CRL distribution points with `cRLIssuer`, indirect CRLs, SHA-1 signatures of legacy vendor PKIs |
@@ -383,7 +421,7 @@ openssl verify -show_chain -crl_check_all -extended_crl \
 | 1 | `certparse` + `verify`, offline verification of files, CLI `inspect`/`split`/`verify`/`store` | done |
 | 1b | CRLs fetched from the distribution points, signature checked, cached locally | done |
 | 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS, swtpm): `tpm2-ek info` / `verify` / `export` | done |
-| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable with `-tpm bundle:` and as test fixture | done |
+| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable with `-tpm bundle:` and as test fixture; `debug-anon` with a draft vendor directory | done |
 | 4 | Walk AIA up to the root for vendors without a stored chain | done |
 | 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | next |
 

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,5 +129,51 @@ func TestDebugBundleReplay(t *testing.T) {
 	}
 	if code, _, _ := runCLI("debug", "-tpm", "bundle:"+out); code != 2 {
 		t.Errorf("debug of a bundle: exit %d", code)
+	}
+}
+
+func TestDebugAnon(t *testing.T) {
+	f := newFixture(t, false)
+	spec := provisioned(t, f)
+	out := filepath.Join(f.dir, "anon")
+	code, stdout, stderr := runCLI("debug-anon", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", out)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
+	}
+	for _, want := range []string{"EK:   0x01C00002 TRUSTED", "Included in full (public):", "store synthetic/", "CN=CSME MCC ROM CA  sha256 ", "-include <sha256>", "tpm2-ek info -store "} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("missing %q in\n%s", want, stdout)
+		}
+	}
+	var all []byte
+	filepath.WalkDir(out, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			b, _ := os.ReadFile(p)
+			all = append(all, b...)
+		}
+		return nil
+	})
+	for _, c := range []*x509.Certificate{f.pki.EK, f.pki.ROM.Cert, f.pki.Kernel.Cert, f.pki.PTT.Cert} {
+		fp := sha256.Sum256(c.Raw)
+		if bytes.Contains(all, c.RawSubjectPublicKeyInfo) || bytes.Contains(all, []byte(hex.EncodeToString(fp[:]))) {
+			t.Errorf("output contains %q", c.Subject)
+		}
+	}
+	y, err := os.ReadFile(filepath.Join(out, "vendor", "ibm", "vendor.yaml"))
+	if err != nil || !strings.Contains(string(y), "chain_nv_indices: [0x01C00100]") {
+		t.Errorf("vendor.yaml: %v\n%s", err, y)
+	}
+
+	// A full debug bundle can be converted, and an archive written.
+	bundlePath := filepath.Join(f.dir, "debug.tar.gz")
+	if code, _, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", bundlePath); code != 0 {
+		t.Fatal(stderr)
+	}
+	archive := filepath.Join(f.dir, "anon.tar.gz")
+	if code, _, stderr := runCLI("debug-anon", "-tpm", "bundle:"+bundlePath, "-store", f.store, "-no-fetch", "-o", archive); code != 0 {
+		t.Fatal(stderr)
+	}
+	if fi, err := os.Stat(archive); err != nil || fi.Size() == 0 {
+		t.Errorf("archive: %v", err)
 	}
 }
