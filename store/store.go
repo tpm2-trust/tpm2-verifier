@@ -60,7 +60,10 @@ type Vendor struct {
 	// AcceptedCriticalExtensions are extension OIDs (dotted) that this
 	// vendor marks critical and that may be ignored during validation.
 	AcceptedCriticalExtensions []string `yaml:"accepted_critical_extensions,omitempty"`
-	Certificates               []*Entry `yaml:"certificates"`
+	// Domains are the hosts (and their subdomains) the vendor publishes its
+	// certificates on. tpm2-ek vendor import flags certificates from others.
+	Domains      []string `yaml:"domains,omitempty"`
+	Certificates []*Entry `yaml:"certificates"`
 
 	// Readme is the content of README.md, if present.
 	Readme string `yaml:"-"`
@@ -126,6 +129,19 @@ func parseOID(s string) (asn1.ObjectIdentifier, error) {
 // Store is a set of vendors.
 type Store struct {
 	vendors []*Vendor
+}
+
+// New returns an empty store.
+func New() *Store { return &Store{} }
+
+// LoadDir loads a vendor directory tree (like the vendors/ directory of the
+// repository) without the embedded store.
+func LoadDir(dir string) (*Store, error) {
+	s := New()
+	if err := s.AddFS(os.DirFS(dir), dir); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // Embedded loads the store compiled into the binary.
@@ -282,6 +298,11 @@ func (s *Store) merge(v *Vendor) {
 	for _, n := range v.ChainNVIndices {
 		if !slices.Contains(cur.ChainNVIndices, n) {
 			cur.ChainNVIndices = append(cur.ChainNVIndices, n)
+		}
+	}
+	for _, d := range v.Domains {
+		if !slices.Contains(cur.Domains, d) {
+			cur.Domains = append(cur.Domains, d)
 		}
 	}
 	for _, o := range v.AcceptedCriticalExtensions {

@@ -40,6 +40,10 @@ tpm2-ek split -p intel-int -s 3 chain.der   # intel-ek-dechainer naming: intel-i
 
 tpm2-ek store list | show intel | export -o certs
 tpm2-ek cache list | clear | path
+
+# Maintainers: turn submissions into vendor store changes (see below)
+tpm2-ek vendor review submissions/x.tar.gz
+tpm2-ek vendor import -accept <sha256> submissions/x.tar.gz
 ```
 
 Reading the TPM needs access to `/dev/tpmrm0` (root or the `tss` group).
@@ -153,7 +157,7 @@ is not replayable, and nothing in it is unique to the TPM:
 
 | File | Content |
 |------|---------|
-| `info.json` | TPM manufacturer, vendor string, firmware, spec; NV layout (index, attributes, size, readability) without content; per EK the verification status and chain |
+| `info.json` | TPM manufacturer, vendor string, firmware, spec; NV layout (index, attributes, size, readability, key type and CA flag of the certificates in it) without content; per EK the verification status, the chain structure and the chain |
 | `certs/<sha256>.der` | the public CA certificates of the chains: from the vendor store or downloaded via AIA |
 | `vendor/<id>/` | draft `vendor.yaml`, `README.md` (TPM, NV layout, hierarchy, quirks), `roots/`, `intermediates/` |
 
@@ -165,6 +169,10 @@ Their serial number, key, signature, key identifiers, fingerprint and dates
 are not written. In their names, all values except C, O and TCG attributes
 are replaced by `REDACTED` for the EK; for CAs only serialNumber, UID and
 e-mail values and runs of 8+ hex digits (`-strict`: all values except C and O).
+Each EK chain also gets a structure summary: the number of levels and the
+type of every level, root first, e.g.
+`root(ECDSA P-384) > vendor-ca(ECDSA P-384) x2 > device-ca(ECDSA P-256) x3 > ek(RSA 2048)`
+(`vendor-ca`: published, `device-ca`: not published, usually per device).
 The issuer name of the last device specific CA is kept, as it names the
 vendor CA to look for. The NV content (EK, chain, nonce, templates, platform
 certificates) is not included.
@@ -217,6 +225,7 @@ Files instead of a TPM: `certparse.Parse(ekDER)`, `certparse.ParseAll(chainBlob)
 |-------------|---------|
 | `bundle`    | Records a TPM into a debug bundle and replays it as a `tpm.Fake` |
 | `vendorinfo` | Collects the non-identifying information to add a vendor (`debug-anon`), with a draft vendor directory |
+| `vendorimport` | Reviews submissions (bundles, debug-anon output) and merges them into a vendor directory tree |
 | `tpm`       | Reads TPM properties and NV indices (go-tpm, pure Go): Linux device, Windows TBS, swtpm; NV index labels; `Fake` backend |
 | `fetch`     | Downloads CRLs (CDP) and issuer certificates (AIA) into the local cache |
 | `certparse` | DER chain splitting, certificate parsing with TCG extensions (critical subjectAltName with TPM identity, EK EKU), CRL distribution points with `cRLIssuer`, indirect CRLs, SHA-1 signatures of legacy vendor PKIs |
@@ -267,6 +276,52 @@ anchors; intermediates only help to build chains.
 (`%AppData%\tpm2-verifier\vendors` on Windows) or a directory passed with
 `-store` is loaded on top of the embedded store. A vendor with an existing ID is
 merged (certificates added). Use it for vendors that are not curated yet.
+
+Optional `domains: [tsci.intel.com]` lists the hosts the vendor publishes
+certificates on; `vendor import` holds back certificates from other hosts.
+`observations.yaml` (generated, not loaded by the store) records the TPMs
+seen in submissions; the README of the vendor shows them between generated
+markers.
+
+### Extending the vendor store from submissions
+
+Users send `tpm2-ek debug-anon` output (or, privately, full `debug`
+bundles), see [submissions/](submissions/README.md). A pull request that adds a
+file to `submissions/` gets an automatic `vendor review` in its CI job
+summary; full bundles are refused there (`-anon-only`).
+
+```bash
+tpm2-ek vendor review submissions/x.tar.gz        # read-only: plan and findings
+tpm2-ek vendor import submissions/x.tar.gz        # write vendors/<id>/
+tpm2-ek vendor import -accept <sha256> ...        # approve a root or flagged CA
+tpm2-ek vendor import -fixture testdata/bundles debug.tar.gz   # keep a full bundle as test fixture (with consent)
+git diff vendors/
+```
+
+The import changes `vendors/<id>/`: certificate files in `roots/` and
+`intermediates/`; `vendor.yaml`, merged line by line so that comments and
+layout stay (new vendors get a generated file with `description: TODO`);
+`observations.yaml` (firmware, vendor string, NV layout, chain structure,
+quirks; no device data; importing the same TPM twice adds nothing); and the
+generated block of `README.md`. If the result does not load as a store,
+every change is undone.
+
+Nothing in a submission is trusted:
+
+- every certificate is **downloaded again** from its source URL; it is only
+  taken if the vendor serves identical bytes, a different certificate is an
+  error that blocks the import;
+- **roots are never added automatically**: compare the SHA-256 with one the
+  vendor publishes through another channel, then approve it with `-accept`;
+- intermediates are added automatically only if they were downloaded again,
+  come from one of the vendor's `domains` (new vendors: the domains are taken
+  from the accepted certificates), and are signed by a root of the store or
+  an approved one;
+- certificates read from the TPM need approval even if published, as they
+  are usually device specific; so do certificates without a URL;
+- the public part of each chain must verify, and the EK's TCG manufacturer
+  must match the TPM's (warning otherwise); incomplete chains and unhandled
+  critical extensions are reported.
 
 ## The manual way: tpm2-tools and openssl
 
@@ -423,6 +478,7 @@ openssl verify -show_chain -crl_check_all -extended_crl \
 | 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS, swtpm): `tpm2-ek info` / `verify` / `export` | done |
 | 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable with `-tpm bundle:` and as test fixture; `debug-anon` with a draft vendor directory | done |
 | 4 | Walk AIA up to the root for vendors without a stored chain | done |
+| 4b | Submissions: `vendor review`/`import`, observations, CI review of `submissions/` | done |
 | 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | next |
 
 ## Development

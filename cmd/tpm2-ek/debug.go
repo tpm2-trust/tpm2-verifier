@@ -169,7 +169,15 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	vopts := vendorinfo.Options{Tool: versionString(), Published: publishedCerts(ctx, s, results, crlf), Include: include, Strict: *strict}
+	var eks []vendorinfo.EKReport
+	for i, e := range s.EKCertificates() {
+		eks = append(eks, vendorinfo.EKReport{Index: e.Index, Report: results[i].Report})
+	}
+	var published map[string]string
+	if f := crlf.fetcher(); f != nil {
+		published = vendorinfo.Published(ctx, s, eks, f)
+	}
+	vopts := vendorinfo.Options{Tool: versionString(), Published: published, Include: include, Strict: *strict}
 	if *platform && !strings.HasPrefix(*spec, "bundle:") {
 		_, p := bundle.PlatformInfo()
 		vopts.Platform = map[string]string{}
@@ -178,10 +186,6 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 				vopts.Platform[k] = v
 			}
 		}
-	}
-	var eks []vendorinfo.EKReport
-	for i, e := range s.EKCertificates() {
-		eks = append(eks, vendorinfo.EKReport{Index: e.Index, Report: results[i].Report})
 	}
 	info, err := vendorinfo.Build(s, eks, st, vopts)
 	if err != nil {
@@ -215,7 +219,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "Wrote %s\n\n", *out)
 	fmt.Fprintf(stdout, "TPM:  %s (%s), firmware %s\n", s.Info.Manufacturer, s.Info.VendorString, s.Info.FirmwareVersion)
 	for _, ek := range info.EK {
-		fmt.Fprintf(stdout, "EK:   %s %s\n", ek.Index, strings.ToUpper(string(ek.Status)))
+		fmt.Fprintf(stdout, "EK:   %s %s, %d levels: %s\n", ek.Index, strings.ToUpper(string(ek.Status)), ek.Structure.Levels, ek.Structure.Summary)
 	}
 	fmt.Fprintf(stdout, "\nIncluded in full (public):\n")
 	if len(info.Certificates) == 0 {
@@ -263,38 +267,4 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "Try it:  tpm2-ek info -store %s\n", filepath.Dir(draft))
 	}
 	return nil
-}
-
-// publishedCerts maps the fingerprints of certificates published at an AIA
-// URL of a certificate in the TPM or of the chains to that URL.
-func publishedCerts(ctx context.Context, s *tpm.Scan, results []ekResult, crlf crlFlags) map[string]string {
-	out := map[string]string{}
-	f := crlf.fetcher()
-	if f == nil {
-		return out
-	}
-	var urls []string
-	for _, e := range s.Entries {
-		for _, c := range e.Certificates {
-			urls = append(urls, c.IssuingCertificateURL...)
-		}
-	}
-	for _, r := range results {
-		for _, l := range r.Report.Chain {
-			urls = append(urls, l.Cert.IssuingCertificateURL...)
-		}
-	}
-	for _, u := range urls {
-		if _, done := out[u]; done {
-			continue
-		}
-		if res, err := f.FetchCertificates(ctx, u); err == nil {
-			for _, c := range res.Certificates {
-				if _, ok := out[c.Fingerprint]; !ok {
-					out[c.Fingerprint] = u
-				}
-			}
-		}
-	}
-	return out
 }

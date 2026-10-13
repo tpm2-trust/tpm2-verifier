@@ -1,0 +1,35 @@
+name: TPM vendor submission
+description: Send debug-anon output to add or complete a TPM vendor in the store
+labels: [vendor-submission]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `sudo tpm2-ek debug-anon -o tpm2-ek-debug-anon.tar.gz` and attach the file below.
+        It contains nothing that identifies your TPM. **Do not attach a full `tpm2-ek debug` bundle**:
+        it contains your EK certificate.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Optional, e.g. "ThinkPad X1 Carbon Gen 11" or "Infineon SLB9672 module"
+  - type: textarea
+    id: output
+    attributes:
+      label: Output of debug-anon
+      description: The text tpm2-ek debug-anon printed (optional, helps the review)
+      render: text
+  - type: textarea
+    id: file
+    attributes:
+      label: Attachment
+      description: Drag the .tar.gz here
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Consent
+      options:
+        - label: I checked the list printed by debug-anon and agree to publish this file.
+          required: true

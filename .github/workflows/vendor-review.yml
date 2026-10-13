@@ -1,0 +1,31 @@
+name: vendor review
+
+on:
+  pull_request:
+    paths: ['submissions/**']
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Review submissions
+        run: |
+          files=$(git diff --name-only --diff-filter=AM "origin/${{ github.base_ref }}...HEAD" -- submissions/ | grep -v '\.md$' || true)
+          if [ -z "$files" ]; then echo "no submissions"; exit 0; fi
+          go build -o tpm2-ek ./cmd/tpm2-ek
+          echo "## Vendor submission review" >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          for f in $files; do
+            ./tpm2-ek vendor review -anon-only -format markdown "$f" >> "$GITHUB_STEP_SUMMARY" 2>&1 || status=1
+          done
+          cat "$GITHUB_STEP_SUMMARY"
+          exit $status

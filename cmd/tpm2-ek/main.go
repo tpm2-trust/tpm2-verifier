@@ -40,6 +40,7 @@ func commands() []command {
 		{"split", "split a concatenated DER chain (e.g. NV 0x01C00100) into files", runSplit},
 		{"verify", "verify EK certificates (from the TPM or files) against the vendor store", runVerify},
 		{"store", "list, show and export the vendor trust store", runStore},
+		{"vendor", "maintainers: review and import submissions into the vendor directory", runVendor},
 		{"cache", "list or clear the CRL and certificate cache", runCache},
 		{"version", "print the version", runVersion},
 	}

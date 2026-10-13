@@ -17,6 +17,7 @@
 package vendorinfo
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
@@ -101,10 +102,11 @@ type NVIndex struct {
 
 // CertRef is a certificate found in an NV index.
 type CertRef struct {
-	Subject string `json:"subject"`
-	CA      bool   `json:"ca"`
-	Public  bool   `json:"public"`
-	SHA256  string `json:"sha256,omitempty"` // public certificates only
+	Subject      string `json:"subject"`
+	KeyAlgorithm string `json:"key_algorithm"`
+	CA           bool   `json:"ca"`
+	Public       bool   `json:"public"`
+	SHA256       string `json:"sha256,omitempty"` // public certificates only
 }
 
 // EK is the verification result of one EK certificate index.
@@ -113,8 +115,79 @@ type EK struct {
 	Label  string        `json:"label"`
 	Status verify.Status `json:"status"`
 	Vendor string        `json:"vendor,omitempty"`
+	// Structure summarizes the chain: levels and certificate types.
+	Structure Structure `json:"structure"`
 	// Chain starts with the EK certificate.
 	Chain []Cert `json:"chain"`
+}
+
+// Roles of certificates in a chain.
+const (
+	RoleEK       = "ek"        // the EK certificate
+	RoleDeviceCA = "device-ca" // CA certificate not published (usually per device, from the TPM)
+	RoleVendorCA = "vendor-ca" // published intermediate CA
+	RoleRoot     = "root"      // self-signed
+)
+
+// Structure is the shape of an EK chain, independent of the device.
+type Structure struct {
+	// Levels is the number of certificates, EK included.
+	Levels int `json:"levels"`
+	// Complete is false if no issuer was found for the last certificate.
+	Complete bool    `json:"complete"`
+	Shape    []Level `json:"shape"`
+	// Summary reads root first, e.g.
+	// "root(ECDSA P-384) > vendor-ca(ECDSA P-384) > device-ca(ECDSA P-256) x3 > ek(RSA 2048)".
+	Summary string `json:"summary"`
+}
+
+// Level is one certificate of a Structure, starting with the EK.
+type Level struct {
+	Role         string        `json:"role"`
+	KeyAlgorithm string        `json:"key_algorithm"`
+	Source       verify.Source `json:"source"`
+	InTPM        bool          `json:"in_tpm"`
+}
+
+func structure(chain []Cert, status verify.Status) Structure {
+	st := Structure{Levels: len(chain), Complete: status != verify.StatusIncomplete}
+	for i, c := range chain {
+		role := RoleDeviceCA
+		switch {
+		case i == 0:
+			role = RoleEK
+		case c.SelfSigned:
+			role = RoleRoot
+		case c.Public:
+			role = RoleVendorCA
+		}
+		st.Shape = append(st.Shape, Level{Role: role, KeyAlgorithm: c.KeyAlgorithm, Source: c.Source,
+			InTPM: c.Source == verify.SourceLeaf || c.Source == verify.SourceProvided})
+	}
+	st.Summary = ShapeSummary(st.Shape, st.Complete)
+	return st
+}
+
+// ShapeSummary renders a chain shape root first, collapsing repeated levels.
+func ShapeSummary(shape []Level, complete bool) string {
+	var parts []string
+	if !complete {
+		parts = append(parts, "?")
+	}
+	for i := len(shape) - 1; i >= 0; {
+		l := shape[i]
+		n := 1
+		for i-n >= 0 && shape[i-n].Role == l.Role && shape[i-n].KeyAlgorithm == l.KeyAlgorithm {
+			n++
+		}
+		p := fmt.Sprintf("%s(%s)", l.Role, l.KeyAlgorithm)
+		if n > 1 {
+			p += fmt.Sprintf(" x%d", n)
+		}
+		parts = append(parts, p)
+		i -= n
+	}
+	return strings.Join(parts, " > ")
 }
 
 // Cert describes one certificate of a chain. For non-public certificates,
@@ -144,6 +217,7 @@ type Cert struct {
 	ValidityDays int        `json:"validity_days"`
 
 	CA          bool        `json:"ca"`
+	SelfSigned  bool        `json:"self_signed,omitempty"`
 	MaxPathLen  *int        `json:"max_path_len,omitempty"`
 	KeyUsage    []string    `json:"key_usage,omitempty"`
 	ExtKeyUsage []string    `json:"ext_key_usage,omitempty"`
@@ -239,7 +313,7 @@ func Build(s *tpm.Scan, eks []EKReport, st *store.Store, opts Options) (*Info, e
 		n.Readable = tpm.IsTCG(e.Index) && e.ReadError == "" && e.Public != nil
 		for _, c := range e.Certificates {
 			ok, _, _ := public(c)
-			ref := CertRef{CA: c.IsCA, Public: ok}
+			ref := CertRef{CA: c.IsCA, Public: ok, KeyAlgorithm: keyAlgorithm(c.Certificate)}
 			if ok {
 				ref.Subject, ref.SHA256 = c.SubjectString(), c.Fingerprint
 			} else {
@@ -287,6 +361,7 @@ func Build(s *tpm.Scan, eks []EKReport, st *store.Store, opts Options) (*Info, e
 			}
 			ek.Chain = append(ek.Chain, d)
 		}
+		ek.Structure = structure(ek.Chain, ek.Status)
 		info.EK = append(info.EK, ek)
 	}
 	if err := info.buildDraft(s, eks, st, created); err != nil {
@@ -304,6 +379,7 @@ func describe(c *certparse.Certificate) Cert {
 		SignatureAlgorithm: c.SignatureAlgorithm.String(),
 		ValidityDays:       int(c.NotAfter.Sub(c.NotBefore).Round(24*time.Hour) / (24 * time.Hour)),
 		CA:                 c.IsCA,
+		SelfSigned:         c.IsSelfSigned(),
 		KeyUsage:           keyUsage(c.KeyUsage),
 		CRLs:               c.CRLURIs(),
 		AIAIssuers:         c.IssuingCertificateURL,
@@ -476,5 +552,41 @@ func sortedKeys[V any](m map[string]V) []string {
 		out = append(out, k)
 	}
 	slices.Sort(out)
+	return out
+}
+
+// Published downloads the AIA "CA Issuers" URLs of every certificate in the
+// scan and in the chains and maps the fingerprints of the certificates found
+// there to their URL (for Options.Published).
+func Published(ctx context.Context, s *tpm.Scan, eks []EKReport, f verify.CertFetcher) map[string]string {
+	out := map[string]string{}
+	if f == nil {
+		return out
+	}
+	var urls []string
+	for _, e := range s.Entries {
+		for _, c := range e.Certificates {
+			urls = append(urls, c.IssuingCertificateURL...)
+		}
+	}
+	for _, r := range eks {
+		for _, l := range r.Report.Chain {
+			urls = append(urls, l.Cert.IssuingCertificateURL...)
+		}
+	}
+	done := map[string]bool{}
+	for _, u := range urls {
+		if done[u] {
+			continue
+		}
+		done[u] = true
+		if res, err := f.FetchCertificates(ctx, u); err == nil {
+			for _, c := range res.Certificates {
+				if _, ok := out[c.Fingerprint]; !ok {
+					out[c.Fingerprint] = u
+				}
+			}
+		}
+	}
 	return out
 }

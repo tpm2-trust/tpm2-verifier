@@ -177,3 +177,48 @@ func TestDebugAnon(t *testing.T) {
 		t.Errorf("archive: %v", err)
 	}
 }
+
+// TestVendorImport: a contributor runs debug-anon, the maintainer reviews
+// and imports it into an empty vendor directory.
+func TestVendorImport(t *testing.T) {
+	f := newFixture(t, false)
+	spec := provisioned(t, f)
+	sub := filepath.Join(f.dir, "anon.tar.gz")
+	if code, _, stderr := runCLI("debug-anon", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", sub); code != 0 {
+		t.Fatal(stderr)
+	}
+	vendors := filepath.Join(f.dir, "vendors")
+	os.MkdirAll(vendors, 0o755)
+
+	code, stdout, stderr := runCLI("vendor", "review", "-vendors", vendors, "-no-fetch", sub)
+	if code != 0 || !strings.Contains(stdout, "Vendor:     ibm, IBM (NEW)") || !strings.Contains(stdout, "pending: not published") ||
+		!strings.Contains(stdout, "ready to import (0 certificates, 3 pending approval)") {
+		t.Fatalf("review exit %d\n%s%s", code, stdout, stderr)
+	}
+	args := []string{"vendor", "import", "-vendors", vendors, "-no-fetch"}
+	for _, c := range []*x509.Certificate{f.pki.Root.Cert, f.pki.Int1.Cert, f.pki.Int2.Cert} {
+		sum := sha256.Sum256(c.Raw)
+		args = append(args, "-accept", hex.EncodeToString(sum[:]))
+	}
+	code, stdout, stderr = runCLI(append(args, sub)...)
+	if code != 0 || !strings.Contains(stdout, "ibm/vendor.yaml") {
+		t.Fatalf("import exit %d\n%s%s", code, stdout, stderr)
+	}
+	// The imported vendor directory alone makes the TPM trusted.
+	code, stdout, _ = runCLI("info", "-tpm", spec, "-store", vendors, "-no-fetch")
+	if code != 0 || !strings.Contains(stdout, "TRUSTED (vendor ibm)") {
+		t.Errorf("info with imported vendor: exit %d\n%s", code, stdout)
+	}
+	// Again: nothing to do.
+	if _, stdout, _ := runCLI("vendor", "review", "-vendors", vendors, "-no-fetch", sub); !strings.Contains(stdout, "nothing to import") {
+		t.Errorf("second review:\n%s", stdout)
+	}
+	// Public intake refuses full bundles.
+	full := filepath.Join(f.dir, "debug.tar.gz")
+	if code, _, stderr := runCLI("debug", "-tpm", spec, "-no-fetch", "-o", full); code != 0 {
+		t.Fatal(stderr)
+	}
+	if code, _, stderr := runCLI("vendor", "review", "-anon-only", "-vendors", vendors, "-no-fetch", full); code != 2 || !strings.Contains(stderr, "full debug bundle") {
+		t.Errorf("-anon-only: exit %d %s", code, stderr)
+	}
+}

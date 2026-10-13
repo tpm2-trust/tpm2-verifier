@@ -12,6 +12,27 @@ import (
 	"github.com/mrwiora/tpm2-verifier/verify"
 )
 
+// VendorName returns the name of a TPM manufacturer ID from the TCG Vendor ID
+// Registry, or the ID itself.
+func VendorName(manufacturer string) string {
+	if n := vendorNames[manufacturer]; n != "" {
+		return n
+	}
+	return manufacturer
+}
+
+// Slug turns s into a lower case file or vendor ID ("Foo Bar CA" -> "foo-bar-ca").
+func Slug(s string) string { return slug(s) }
+
+// CertFileName returns the file base name used for a CA certificate in a
+// vendor directory, without extension.
+func CertFileName(c *certparse.Certificate) string {
+	if s := slug(commonName(c)); s != "" {
+		return s
+	}
+	return "ca"
+}
+
 // TCG vendor IDs (TCG Vendor ID Registry) of common TPM manufacturers.
 var vendorNames = map[string]string{
 	"AMD": "AMD", "ATML": "Atmel", "BRCM": "Broadcom", "CSCO": "Cisco", "FLYS": "Flyslice Technologies",
