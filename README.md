@@ -164,8 +164,9 @@ template, and `vendor import` shows them per observation.
 
 Templates: L-1/L-2 (low range) are the go-tpm reference templates. H-1 to
 H-7 (high range) use the PolicyB digests of the TCG EK Credential Profile
-2.5; they are tested with swtpm, not yet against vendor hardware. A wrong
-template can only cause `key-mismatch`, never a false `proven`.
+2.5; all are tested with swtpm, and L-1, L-2 and H-3 are confirmed on Intel
+PTT (firmware 600.15). A wrong template can only cause `key-mismatch`, never
+a false `proven`.
 
 Like any local check, this trusts the software on the machine it runs on. To
 attest a remote machine, the verifier must run elsewhere and send the

@@ -12,7 +12,8 @@ import (
 // used by the low range templates. The high range templates use PolicyB,
 // PolicyOR(PolicyA, PolicyC) with PolicyC = TPM2_PolicyAuthorizeNV of the EK
 // policy index. Wrong values cannot produce a false positive: the TPM would
-// create a different key, which is reported as a key mismatch.
+// create a different key, which is reported as a key mismatch. PolicyB_SHA384
+// (H-3) is confirmed on Intel PTT hardware.
 var (
 	policyASHA256 = mustHex("837197674484B3F81A90CC8D46A5D724FD52D76E06520B64F2A1DA1B331469AA")
 	policyBSHA256 = mustHex("CA3D0A99A2B93906F7A3342414EFCFB3A385D44CD1FD459089D19B5071C0B7A0")

@@ -93,10 +93,10 @@ type ops interface {
 	flush(h tpm2.TPMHandle)
 }
 
-func prove(o ops, index uint32, certKey crypto.PublicKey, nvTemplate, nvNonce []byte, opts Options) Result {
+func prove(o ops, index uint32, certKey crypto.PublicKey, nvTemplate, nvNonce []byte, opts Options) (r Result) {
 	start := time.Now()
-	r := Result{Index: fmt.Sprintf("0x%08X", index)}
-	defer func() { r.Duration = time.Since(start) }()
+	r.Index = fmt.Sprintf("0x%08X", index)
+	defer func() { r.Duration = time.Since(start) }() // r is the named result, so this reaches the caller
 	rnd := opts.Rand
 	if rnd == nil {
 		rnd = rand.Reader

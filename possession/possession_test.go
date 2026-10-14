@@ -50,7 +50,7 @@ func TestProveSwtpm(t *testing.T) {
 			t.Fatalf("0x%08X: %v", idx, err)
 		}
 		r := Prove(tr, idx, key, nil, nil, Options{})
-		if r.Status != StatusProven || r.Template != name {
+		if r.Status != StatusProven || r.Template != name || r.Duration <= 0 {
 			t.Errorf("0x%08X: %+v", idx, r)
 		}
 	}
