@@ -1,6 +1,6 @@
 # tpm2-verifier
 
-A pure Go library and CLI (`tpm2-ek`) to inspect and verify TPM 2.0
+A pure Go library and CLI (`tpm2-verifier`) to inspect and verify TPM 2.0
 endorsement key (EK) certificates and their vendor certificate chains, with a
 curated, fingerprint-pinned store of TPM vendor root CAs.
 
@@ -14,37 +14,44 @@ writes a debug bundle that can be replayed and analyzed anywhere.
 
 ## Install
 
+Every [release](https://github.com/tpm2-trust/tpm2-verifier/releases) has
+static binaries (Linux amd64/arm64, Windows, macOS), an Arch Linux package and
+a Debian 13 package; the Arch package is also in the AUR (`tpm2-verifier`).
+
 ```bash
-go install github.com/tpm2-trust/tpm2-verifier/cmd/tpm2-ek@latest
+sudo pacman -U tpm2-verifier-*.pkg.tar.zst      # Arch Linux (or: yay -S tpm2-verifier)
+sudo apt install ./tpm2-verifier_*.deb          # Debian / Ubuntu
+go install github.com/tpm2-trust/tpm2-verifier/cmd/tpm2-verifier@latest
 ```
 
 No cgo, no openssl needed. Linux first; it builds and runs on Windows too.
+Packaging and the release workflow: [packaging/README.md](packaging/README.md).
 
 ## CLI
 
 ```bash
 # Everything in one go: vendor, firmware, all NV indices, every EK certificate
 # verified up to the vendor root, every CA checked against its CRL
-tpm2-ek info            # -v for attributes, fingerprints, CRL details; -json
+tpm2-verifier info            # -v for attributes, fingerprints, CRL details; -json
 
-tpm2-ek info -prove     # also prove that this TPM holds the EK's private key (see below)
-tpm2-ek verify          # only the verification of the EK certificates in the TPM
-tpm2-ek export -o out   # EK certs, chain, raw NV, vendor CAs + matching openssl command
-tpm2-ek debug           # debug bundle for unknown vendors / bug reports (see below)
-tpm2-ek debug-anon      # what is needed to add the vendor, without identifying data
+tpm2-verifier info -prove     # also prove that this TPM holds the EK's private key (see below)
+tpm2-verifier verify          # only the verification of the EK certificates in the TPM
+tpm2-verifier export -o out   # EK certs, chain, raw NV, vendor CAs + matching openssl command
+tpm2-verifier debug           # debug bundle for unknown vendors / bug reports (see below)
+tpm2-verifier debug-anon      # what is needed to add the vendor, without identifying data
 
 # The same for files, e.g. read with tpm2-tools (see the manual section)
-tpm2-ek verify ek.der chain.der
-tpm2-ek inspect ek.der chain.der some.crl   # details, AIA/CDP URLs, TCG quirks, store matches
-tpm2-ek split -o out chain.der              # one file per certificate
-tpm2-ek split -p intel-int -s 3 chain.der   # intel-ek-dechainer naming: intel-int3..5.der
+tpm2-verifier verify ek.der chain.der
+tpm2-verifier inspect ek.der chain.der some.crl   # details, AIA/CDP URLs, TCG quirks, store matches
+tpm2-verifier split -o out chain.der              # one file per certificate
+tpm2-verifier split -p intel-int -s 3 chain.der   # intel-ek-dechainer naming: intel-int3..5.der
 
-tpm2-ek store list | show intel | export -o certs
-tpm2-ek cache list | clear | path
+tpm2-verifier store list | show intel | export -o certs
+tpm2-verifier cache list | clear | path
 
 # Maintainers: turn submissions into vendor store changes (see below)
-tpm2-ek vendor review submissions/x.tar.gz
-tpm2-ek vendor import -accept <sha256> submissions/x.tar.gz
+tpm2-verifier vendor review submissions/x.tar.gz
+tpm2-verifier vendor import -accept <sha256> submissions/x.tar.gz
 ```
 
 Reading the TPM needs access to `/dev/tpmrm0` (root or the `tss` group).
@@ -65,7 +72,7 @@ index authorization only if `no_da` is set, so a TPM can never be pushed
 towards dictionary attack lockout. Only the TCG range `0x01C00000-0x01C0FFFF`
 is read; other indices are only listed.
 
-Expected output of `tpm2-ek verify` on an Intel PTT machine (format illustration):
+Expected output of `tpm2-verifier verify` on an Intel PTT machine (format illustration):
 
 ```
 TPM 0x01C00002 (ek-certificate RSA 2048 (low)): TRUSTED (vendor intel)
@@ -176,11 +183,11 @@ tool.
 ## Debug bundles for unknown vendors
 
 ```bash
-sudo tpm2-ek debug                   # writes tpm2-ek-debug-<manufacturer>-<time>.tar.gz
-tpm2-ek info -tpm bundle:tpm2-ek-debug-IFX-20261011-120000.tar.gz   # anywhere, no TPM needed
+sudo tpm2-verifier debug                   # writes tpm2-verifier-debug-<manufacturer>-<time>.tar.gz
+tpm2-verifier info -tpm bundle:tpm2-verifier-debug-IFX-20261011-120000.tar.gz   # anywhere, no TPM needed
 ```
 
-A bundle records everything `tpm2-ek` reads, so a TPM can be analyzed on
+A bundle records everything `tpm2-verifier` reads, so a TPM can be analyzed on
 another machine exactly as if it were attached:
 
 | File | Content |
@@ -198,9 +205,9 @@ machine. Share bundles only with people you trust with that, or use
 ### Adding a vendor without revealing the TPM (`debug-anon`)
 
 ```bash
-sudo tpm2-ek debug-anon -o ifx            # directory; .tar.gz/.tgz writes an archive
-tpm2-ek info -store ifx/vendor            # try the draft vendor directory
-tpm2-ek debug-anon -tpm bundle:debug.tar.gz -o ifx.tar.gz   # from an existing bundle
+sudo tpm2-verifier debug-anon -o ifx            # directory; .tar.gz/.tgz writes an archive
+tpm2-verifier info -store ifx/vendor            # try the draft vendor directory
+tpm2-verifier debug-anon -tpm bundle:debug.tar.gz -o ifx.tar.gz   # from an existing bundle
 ```
 
 `debug-anon` collects only what is needed to build the vendor directory. It
@@ -298,7 +305,7 @@ library rejects that as an unhandled critical extension, does not check CRLs,
 and returns one error instead of a report per link.
 
 If a vendor uses negative serial numbers, programs using the library need
-`//go:debug x509negativeserial=1` in their main package (`tpm2-ek` has it).
+`//go:debug x509negativeserial=1` in their main package (`tpm2-verifier` has it).
 
 ## Vendor store
 
@@ -344,16 +351,16 @@ markers.
 
 ### Extending the vendor store from submissions
 
-Users send `tpm2-ek debug-anon` output (or, privately, full `debug`
+Users send `tpm2-verifier debug-anon` output (or, privately, full `debug`
 bundles), see [submissions/](submissions/README.md). A pull request that adds a
 file to `submissions/` gets an automatic `vendor review` in its CI job
 summary; full bundles are refused there (`-anon-only`).
 
 ```bash
-tpm2-ek vendor review submissions/x.tar.gz        # read-only: plan and findings
-tpm2-ek vendor import submissions/x.tar.gz        # write vendors/<id>/
-tpm2-ek vendor import -accept <sha256> ...        # approve a root or flagged CA
-tpm2-ek vendor import -fixture testdata/bundles debug.tar.gz   # keep a full bundle as test fixture (with consent)
+tpm2-verifier vendor review submissions/x.tar.gz        # read-only: plan and findings
+tpm2-verifier vendor import submissions/x.tar.gz        # write vendors/<id>/
+tpm2-verifier vendor import -accept <sha256> ...        # approve a root or flagged CA
+tpm2-verifier vendor import -fixture testdata/bundles debug.tar.gz   # keep a full bundle as test fixture (with consent)
 git diff vendors/
 ```
 
@@ -384,7 +391,7 @@ Nothing in a submission is trusted:
 
 ## The manual way: tpm2-tools and openssl
 
-Everything `tpm2-ek` does can be done by hand. This is also the reference for
+Everything `tpm2-verifier` does can be done by hand. This is also the reference for
 what the tool reads.
 
 ### 1. Talk to the resource manager
@@ -406,7 +413,7 @@ tpm2_getcap properties-fixed | grep -A2 -E 'TPM2_PT_(MANUFACTURER|VENDOR_STRING|
 `TPM2_PT_MANUFACTURER` is four ASCII characters, e.g. `INTC` (Intel PTT),
 `IFX` (Infineon), `STM` (STMicroelectronics), `NTC` (Nuvoton), `AMD` (AMD fTPM),
 `MSFT` (Microsoft/Hyper-V/Pluton), `GOOG` (Google), `IBM` (swtpm/IBM simulator).
-`tpm2-ek store list` shows which ones have a curated root.
+`tpm2-verifier store list` shows which ones have a curated root.
 
 ### 3. List the NV indices
 
@@ -512,7 +519,7 @@ CAs use one). openssl needs `-extended_crl` for those.
 ### 8. Verify the chain
 
 ```bash
-tpm2-ek store export -o certs intel     # or use the files in vendors/intel/
+tpm2-verifier store export -o certs intel     # or use the files in vendors/intel/
 openssl verify -show_chain \
   -trusted certs/intel/roots/ondie-ca-root.der \
   -untrusted certs/intel/intermediates/ondie-ca-csme-intermediate.der \
@@ -563,8 +570,8 @@ Tested with tpm2-tools 5 against swtpm (without a resource manager, run
 | 0 | Repository, vendor store format, Intel migrated | done |
 | 1 | `certparse` + `verify`, offline verification of files, CLI `inspect`/`split`/`verify`/`store` | done |
 | 1b | CRLs fetched from the distribution points, signature checked, cached locally | done |
-| 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS, swtpm): `tpm2-ek info` / `verify` / `export` | done |
-| 3 | Debug bundle for unknown vendors (`tpm2-ek debug`), replayable with `-tpm bundle:` and as test fixture; `debug-anon` with a draft vendor directory | done |
+| 2 | Read the TPM directly (pure Go, `/dev/tpmrm0`, Windows TBS, swtpm): `tpm2-verifier info` / `verify` / `export` | done |
+| 3 | Debug bundle for unknown vendors (`tpm2-verifier debug`), replayable with `-tpm bundle:` and as test fixture; `debug-anon` with a draft vendor directory | done |
 | 4 | Walk AIA up to the root for vendors without a stored chain | done |
 | 4b | Submissions: `vendor review`/`import`, observations, CI review of `submissions/` | done |
 | 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | next |

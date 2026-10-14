@@ -9,7 +9,7 @@ description: >-
 # NV indices holding the device specific part of the certificate chain as
 # concatenated DER certificates (TCG EK certificate chain range).
 chain_nv_indices: [0x01C00100]
-# Hosts the vendor publishes certificates on (tpm2-ek vendor import).
+# Hosts the vendor publishes certificates on (tpm2-verifier vendor import).
 domains: [tsci.intel.com]
 certificates:
   - file: roots/ondie-ca-root.der

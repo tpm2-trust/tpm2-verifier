@@ -1,4 +1,4 @@
-// Command tpm2-ek inspects and verifies TPM endorsement key certificates and
+// Command tpm2-verifier inspects and verifies TPM endorsement key certificates and
 // their vendor certificate chains.
 //
 // Some TPM vendors issue certificates with negative serial numbers, which Go
@@ -47,11 +47,11 @@ func commands() []command {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintf(w, "Usage: tpm2-ek <command> [flags] [args]\n\nCommands:\n")
+	fmt.Fprintf(w, "Usage: tpm2-verifier <command> [flags] [args]\n\nCommands:\n")
 	for _, c := range commands() {
 		fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
 	}
-	fmt.Fprintf(w, "\nRun 'tpm2-ek <command> -h' for the flags of a command.\n")
+	fmt.Fprintf(w, "\nRun 'tpm2-verifier <command> -h' for the flags of a command.\n")
 }
 
 func main() {
@@ -80,11 +80,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		case errors.Is(err, flag.ErrHelp):
 			return 0
 		default:
-			fmt.Fprintf(stderr, "tpm2-ek %s: %v\n", c.name, err)
+			fmt.Fprintf(stderr, "tpm2-verifier %s: %v\n", c.name, err)
 			return 2
 		}
 	}
-	fmt.Fprintf(stderr, "tpm2-ek: unknown command %q\n\n", args[0])
+	fmt.Fprintf(stderr, "tpm2-verifier: unknown command %q\n\n", args[0])
 	usage(stderr)
 	return 2
 }
@@ -102,14 +102,14 @@ func versionString() string {
 			v = bi.Main.Version
 		}
 	}
-	return "tpm2-ek " + v
+	return "tpm2-verifier " + v
 }
 
 // newFlagSet returns a flag set that prints its usage to stderr.
 func newFlagSet(name, args, desc string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: tpm2-ek %s [flags] %s\n\n%s\n\nFlags:\n", name, args, desc)
+		fmt.Fprintf(fs.Output(), "Usage: tpm2-verifier %s [flags] %s\n\n%s\n\nFlags:\n", name, args, desc)
 		fs.PrintDefaults()
 	}
 	return fs

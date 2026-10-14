@@ -61,7 +61,7 @@ type Vendor struct {
 	// vendor marks critical and that may be ignored during validation.
 	AcceptedCriticalExtensions []string `yaml:"accepted_critical_extensions,omitempty"`
 	// Domains are the hosts (and their subdomains) the vendor publishes its
-	// certificates on. tpm2-ek vendor import flags certificates from others.
+	// certificates on. tpm2-verifier vendor import flags certificates from others.
 	Domains      []string `yaml:"domains,omitempty"`
 	Certificates []*Entry `yaml:"certificates"`
 

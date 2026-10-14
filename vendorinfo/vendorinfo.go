@@ -41,7 +41,7 @@ const FormatVersion = 1
 
 // Options configure Build.
 type Options struct {
-	// Tool is recorded in info.json, e.g. "tpm2-ek v0.4.0".
+	// Tool is recorded in info.json, e.g. "tpm2-verifier v0.4.0".
 	Tool string
 	// Created is recorded truncated to the day (default now).
 	Created time.Time

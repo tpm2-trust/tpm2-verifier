@@ -16,7 +16,7 @@ func runSplit(args []string, stdout io.Writer) error {
 		"Splits concatenated DER certificates, as stored in the TCG EK certificate chain\n"+
 			"NV range (Intel: 0x01C00100), into one file per certificate. Trailing NV\n"+
 			"padding is ignored.\n\n"+
-			"intel-ek-dechainer compatible naming: tpm2-ek split -p intel-int -s 3 chain.der")
+			"intel-ek-dechainer compatible naming: tpm2-verifier split -p intel-int -s 3 chain.der")
 	outDir := fs.String("o", ".", "output directory (created if missing)")
 	prefix := fs.String("p", "chain-", "file name prefix")
 	start := fs.Int("s", 1, "number of the first certificate")

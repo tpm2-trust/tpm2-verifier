@@ -24,9 +24,9 @@ func runVendor(args []string, stdout io.Writer) error {
 			return vendorCommand(args[1:], stdout, true)
 		}
 	}
-	fmt.Fprintf(os.Stderr, `Usage: tpm2-ek vendor <review|import> [flags] <submission>...
+	fmt.Fprintf(os.Stderr, `Usage: tpm2-verifier vendor <review|import> [flags] <submission>...
 
-For maintainers: turns submissions (tpm2-ek debug bundles or debug-anon
+For maintainers: turns submissions (tpm2-verifier debug bundles or debug-anon
 output, archive or directory) into changes of a vendor directory tree such as
 the vendors/ directory of the repository.
 
@@ -47,7 +47,7 @@ func vendorCommand(args []string, stdout io.Writer, write bool) error {
 	if write {
 		name = "vendor import"
 	}
-	fs := newFlagSet(name, "<submission>...", "See tpm2-ek vendor -h.")
+	fs := newFlagSet(name, "<submission>...", "See tpm2-verifier vendor -h.")
 	vendors := fs.String("vendors", "vendors", "vendor directory tree to update")
 	var accept, include stringList
 	fs.Var(&accept, "accept", "SHA-256 of a certificate approved by you (repeatable): a root\nafter comparing it with the vendor, or a CA flagged as pending")
@@ -89,7 +89,7 @@ func vendorCommand(args []string, stdout io.Writer, write bool) error {
 			return err
 		}
 		if *anonOnly && sub.Kind != vendorimport.KindAnon {
-			return fmt.Errorf("%s is a full debug bundle; it contains the EK certificate, which identifies the TPM. Submit tpm2-ek debug-anon output instead", path)
+			return fmt.Errorf("%s is a full debug bundle; it contains the EK certificate, which identifies the TPM. Submit tpm2-verifier debug-anon output instead", path)
 		}
 		plan, err := vendorimport.Review(ctx, sub, opts)
 		if err != nil {

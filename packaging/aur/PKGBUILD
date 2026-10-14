@@ -1,0 +1,62 @@
+# Maintainer: Matthias R. Wiora <matthias@wiora.io>
+pkgname=tpm2-verifier
+# The release tag, and its pacman form: pkgver may not contain '-', so a
+# prerelease tag's "-rc1" becomes "rc1" (pacman sorts 0.5.0rc1 before
+# 0.5.0, as a prerelease must). The release workflow sets both.
+_tag=v0.1.0
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Verify TPM 2.0 EK certificates up to the vendor root and prove the TPM holds the EK"
+arch=('x86_64' 'aarch64')
+url="https://github.com/tpm2-trust/tpm2-verifier"
+license=('MIT')
+# Pure Go, statically linked, no cgo: no runtime dependencies.
+depends=()
+# go.mod's go line is the minimum; the release build sets GOTOOLCHAIN to
+# the current Go release, which go fetches when the installed one is older.
+makedepends=('go')
+optdepends=('tpm2-tools: for the manual way described in the README'
+            'swtpm: to run the tests against a software TPM')
+conflicts=('tpm2-verifier-git')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$_tag.tar.gz")
+sha256sums=('SKIP')
+options=('!debug')
+
+# GitHub names the extracted directory after the tag, minus a leading 'v'.
+_srcdir="$pkgname-${_tag#v}"
+
+prepare() {
+    cd "$_srcdir"
+
+    export GOPROXY=direct
+    go mod download
+}
+
+build() {
+    cd "$_srcdir"
+
+    # Static and cgo-free, like the release binaries: the same binary runs on
+    # any Linux, also in minimal environments without libc.
+    export CGO_ENABLED=0
+    export GOFLAGS="-trimpath -mod=readonly -modcacherw"
+
+    go build -ldflags "-s -w -X main.version=${pkgver}" -o "$pkgname" ./cmd/tpm2-verifier
+    go version -m "$pkgname" | grep -q 'CGO_ENABLED=0' || { echo "$pkgname was built with cgo" >&2; return 1; }
+}
+
+check() {
+    cd "$_srcdir"
+
+    # Tests that need swtpm skip themselves when it is not installed.
+    go test ./...
+}
+
+package() {
+    cd "$_srcdir"
+
+    install -Dm755 "$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+# vim:set ts=4 sw=4 et:

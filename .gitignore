@@ -1,4 +1,5 @@
 # build output
+/tpm2-verifier
 /tpm2-ek
 /dist/
 
@@ -7,3 +8,5 @@
 /*.pem
 /*.crt
 /out/
+
+tpm2-kira

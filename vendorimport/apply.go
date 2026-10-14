@@ -175,7 +175,7 @@ func (p *Plan) newVendorYAML(opts Options) []byte {
 		fmt.Fprintf(&b, "# NV indices holding chain certificates as concatenated DER.\nchain_nv_indices: [%s]\n", strings.Join(a.ChainNVIndices, ", "))
 	}
 	if len(a.Domains) > 0 {
-		fmt.Fprintf(&b, "# Hosts the vendor publishes certificates on (tpm2-ek vendor import).\ndomains: [%s]\n", strings.Join(a.Domains, ", "))
+		fmt.Fprintf(&b, "# Hosts the vendor publishes certificates on (tpm2-verifier vendor import).\ndomains: [%s]\n", strings.Join(a.Domains, ", "))
 	}
 	if len(a.Certificates) == 0 {
 		b.WriteString("certificates: []\n")

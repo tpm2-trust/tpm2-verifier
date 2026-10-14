@@ -141,7 +141,7 @@ func TestDebugAnon(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
 	}
-	for _, want := range []string{"EK:   0x01C00002 TRUSTED", "Included in full (public):", "store synthetic/", "CN=CSME MCC ROM CA  sha256 ", "-include <sha256>", "tpm2-ek info -store "} {
+	for _, want := range []string{"EK:   0x01C00002 TRUSTED", "Included in full (public):", "store synthetic/", "CN=CSME MCC ROM CA  sha256 ", "-include <sha256>", "tpm2-verifier info -store "} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("missing %q in\n%s", want, stdout)
 		}

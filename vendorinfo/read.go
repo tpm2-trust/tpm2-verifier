@@ -115,7 +115,7 @@ func add(files map[string][]byte, total *int64, name string, size int64, r io.Re
 func parse(files map[string][]byte) (*Info, error) {
 	raw, ok := files["info.json"]
 	if !ok {
-		return nil, errors.New("vendorinfo: info.json missing (not tpm2-ek debug-anon output)")
+		return nil, errors.New("vendorinfo: info.json missing (not tpm2-verifier debug-anon output)")
 	}
 	var info Info
 	if err := json.Unmarshal(raw, &info); err != nil {

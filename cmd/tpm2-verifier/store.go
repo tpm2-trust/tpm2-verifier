@@ -31,7 +31,7 @@ func runStore(args []string, stdout io.Writer) error {
 
 func storeUsage() error {
 	dir, _ := store.OverlayDir()
-	fmt.Fprintf(os.Stderr, `Usage: tpm2-ek store <subcommand> [flags]
+	fmt.Fprintf(os.Stderr, `Usage: tpm2-verifier store <subcommand> [flags]
 
 Subcommands:
   list                 list vendors

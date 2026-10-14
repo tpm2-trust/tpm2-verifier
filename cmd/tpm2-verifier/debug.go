@@ -19,7 +19,7 @@ import (
 
 func runDebug(args []string, stdout io.Writer) error {
 	fs := newFlagSet("debug", "",
-		"Writes a debug bundle (.tar.gz) with everything tpm2-ek reads from the TPM:\n"+
+		"Writes a debug bundle (.tar.gz) with everything tpm2-verifier reads from the TPM:\n"+
 			"properties, all NV public areas, the content of the readable TCG NV indices,\n"+
 			"platform information (kernel, TPM sysfs, DMI vendor/model; no serials), and\n"+
 			"the verification result including every certificate of the chains, also\n"+
@@ -27,7 +27,7 @@ func runDebug(args []string, stdout io.Writer) error {
 			"The bundle contains the EK certificate, which uniquely identifies the TPM.\n"+
 			"To add a vendor without revealing the TPM, use debug-anon instead.")
 	spec := addTPMFlag(fs)
-	out := fs.String("o", "", "output file (default tpm2-ek-debug-<manufacturer>-<time>.tar.gz)")
+	out := fs.String("o", "", "output file (default tpm2-verifier-debug-<manufacturer>-<time>.tar.gz)")
 	noPlatform := fs.Bool("no-platform", false, "do not record kernel, sysfs and DMI information")
 	overlay := fs.String("store", "", "additional vendor store directory")
 	crlf := addCRLFlags(fs)
@@ -109,7 +109,7 @@ func runDebug(args []string, stdout io.Writer) error {
 		if m == "" {
 			m = "unknown"
 		}
-		*out = fmt.Sprintf("tpm2-ek-debug-%s-%s.tar.gz", m, b.Manifest.Created.Format("20060102-150405"))
+		*out = fmt.Sprintf("tpm2-verifier-debug-%s-%s.tar.gz", m, b.Manifest.Created.Format("20060102-150405"))
 	}
 	if err := b.WriteFile(*out); err != nil {
 		return err
@@ -127,7 +127,7 @@ func runDebug(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "\nPrivacy: the bundle contains the EK certificate, which uniquely identifies\n"+
 		"this TPM. Share it only with people you trust with that, or use debug-anon.\nReplay it with:\n"+
-		"  tpm2-ek info -tpm bundle:%s\n", path.Base(*out))
+		"  tpm2-verifier info -tpm bundle:%s\n", path.Base(*out))
 	return nil
 }
 
@@ -155,7 +155,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 			"-o ending in .tar.gz or .tgz writes an archive, anything else a directory.\n"+
 			"-tpm bundle:<file> converts an existing debug bundle.")
 	spec := addTPMFlag(fs)
-	out := fs.String("o", "", "output archive or directory (default tpm2-ek-debug-anon-<manufacturer>-<date>.tar.gz)")
+	out := fs.String("o", "", "output archive or directory (default tpm2-verifier-debug-anon-<manufacturer>-<date>.tar.gz)")
 	platform := fs.Bool("platform", false, "include the DMI vendor/model and TPM sysfs strings")
 	strict := fs.Bool("strict", false, "redact all name values of device specific CAs except C and O\n(default: only serial numbers, IDs and long hex/digit runs)")
 	var include stringList
@@ -219,7 +219,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 		if m == "" {
 			m = "unknown"
 		}
-		*out = fmt.Sprintf("tpm2-ek-debug-anon-%s-%s.tar.gz", m, strings.ReplaceAll(info.Created, "-", ""))
+		*out = fmt.Sprintf("tpm2-verifier-debug-anon-%s-%s.tar.gz", m, strings.ReplaceAll(info.Created, "-", ""))
 	}
 	archive := strings.HasSuffix(*out, ".tar.gz") || strings.HasSuffix(*out, ".tgz")
 	if archive {
@@ -289,7 +289,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "\nDraft vendor directory: %s\n", draft)
 	if !archive {
-		fmt.Fprintf(stdout, "Try it:  tpm2-ek info -store %s\n", filepath.Dir(draft))
+		fmt.Fprintf(stdout, "Try it:  tpm2-verifier info -store %s\n", filepath.Dir(draft))
 	}
 	return nil
 }

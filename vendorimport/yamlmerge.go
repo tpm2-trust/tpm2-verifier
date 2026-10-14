@@ -28,7 +28,7 @@ func mergeVendorYAML(src []byte, a additions) ([]byte, error) {
 	}{
 		{"manufacturer_ids", a.ManufacturerIDs, ""},
 		{"chain_nv_indices", a.ChainNVIndices, "# NV indices holding chain certificates as concatenated DER."},
-		{"domains", a.Domains, "# Hosts the vendor publishes certificates on (tpm2-ek vendor import)."},
+		{"domains", a.Domains, "# Hosts the vendor publishes certificates on (tpm2-verifier vendor import)."},
 	} {
 		if err := m.addToList(l.key, l.values, l.comment); err != nil {
 			return nil, err

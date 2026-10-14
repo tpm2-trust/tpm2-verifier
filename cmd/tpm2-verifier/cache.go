@@ -37,7 +37,7 @@ func (c crlFlags) fetcher() *fetch.Fetcher {
 func runCache(args []string, stdout io.Writer) error {
 	usage := func() error {
 		def, _ := fetch.DefaultCacheDir()
-		fmt.Fprintf(os.Stderr, `Usage: tpm2-ek cache <subcommand> [-cache-dir dir]
+		fmt.Fprintf(os.Stderr, `Usage: tpm2-verifier cache <subcommand> [-cache-dir dir]
 
 Subcommands:
   list    list cached CRLs

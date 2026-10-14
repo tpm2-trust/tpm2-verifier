@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Run `sudo tpm2-ek debug-anon -o tpm2-ek-debug-anon.tar.gz` and attach the file below.
-        It contains nothing that identifies your TPM. **Do not attach a full `tpm2-ek debug` bundle**:
+        Run `sudo tpm2-verifier debug-anon -o tpm2-verifier-debug-anon.tar.gz` and attach the file below.
+        It contains nothing that identifies your TPM. **Do not attach a full `tpm2-verifier debug` bundle**:
         it contains your EK certificate.
   - type: input
     id: device
@@ -17,7 +17,7 @@ body:
     id: output
     attributes:
       label: Output of debug-anon
-      description: The text tpm2-ek debug-anon printed (optional, helps the review)
+      description: The text tpm2-verifier debug-anon printed (optional, helps the review)
       render: text
   - type: textarea
     id: file

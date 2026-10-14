@@ -236,7 +236,7 @@ func printInfo(w io.Writer, s *tpm.Scan, st *store.Store, results []ekResult, ve
 		trusted = trusted && r.Report.Status == verify.StatusTrusted
 	}
 	if !trusted {
-		fmt.Fprintf(w, "To analyze this TPM elsewhere or report an unknown vendor: tpm2-ek debug\n")
+		fmt.Fprintf(w, "To analyze this TPM elsewhere or report an unknown vendor: tpm2-verifier debug\n")
 	}
 }
 

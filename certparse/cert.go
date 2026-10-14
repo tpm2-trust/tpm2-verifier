@@ -93,7 +93,7 @@ type Certificate struct {
 //
 // Since Go 1.23 certificates with a negative serial number are rejected
 // unless the program is built with "//go:debug x509negativeserial=1" (the
-// tpm2-ek command is) or run with GODEBUG=x509negativeserial=1.
+// tpm2-verifier command is) or run with GODEBUG=x509negativeserial=1.
 func Parse(der []byte) (*Certificate, error) {
 	xc, err := x509.ParseCertificate(der)
 	if err != nil {

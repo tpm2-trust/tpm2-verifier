@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const readme = `tpm2-verifier vendor information (tpm2-ek debug-anon)
+const readme = `tpm2-verifier vendor information (tpm2-verifier debug-anon)
 =====================================================
 
 What is needed to add this TPM's vendor to the tpm2-verifier vendor store,
@@ -23,7 +23,7 @@ without data that identifies the TPM:
                    device specific name values redacted)
   certs/           public CA certificates (vendor store, AIA downloads)
   vendor/<id>/     draft vendor directory: vendor.yaml, README.md, roots/,
-                   intermediates/; usable as overlay: tpm2-ek info -store vendor
+                   intermediates/; usable as overlay: tpm2-verifier info -store vendor
 
 Not included: EK certificates, per-device CA certificates, NV content,
 serial numbers, keys.

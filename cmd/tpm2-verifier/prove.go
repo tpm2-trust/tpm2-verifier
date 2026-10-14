@@ -46,7 +46,7 @@ func proveResults(ctx context.Context, spec string, s *tpm.Scan, results []ekRes
 		}
 	}
 	if strings.HasPrefix(spec, "bundle:") {
-		unsupported("a recorded bundle cannot prove possession; run tpm2-ek on the device")
+		unsupported("a recorded bundle cannot prove possession; run tpm2-verifier on the device")
 		return nil
 	}
 	t, err := openTPM(spec)

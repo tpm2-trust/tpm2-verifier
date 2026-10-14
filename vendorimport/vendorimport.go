@@ -1,4 +1,4 @@
-// Package vendorimport turns submissions (tpm2-ek debug bundles and
+// Package vendorimport turns submissions (tpm2-verifier debug bundles and
 // debug-anon output) into changes of a vendor directory tree such as the
 // vendors/ directory of this repository.
 //
@@ -85,7 +85,7 @@ func Load(ctx context.Context, path string, st *store.Store, f verify.CertFetche
 }
 
 // FromBundle replays a debug bundle and collects its vendor information,
-// like tpm2-ek debug-anon does on the device.
+// like tpm2-verifier debug-anon does on the device.
 func FromBundle(ctx context.Context, b *bundle.Bundle, st *store.Store, f verify.CertFetcher, include []string) (*vendorinfo.Info, error) {
 	s, err := tpm.New(b.Fake()).Scan(ctx)
 	if err != nil {

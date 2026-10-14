@@ -10,7 +10,7 @@
 //	tpm/info.json        decoded identity (manufacturer, firmware, ...)
 //	tpm/nv.json          every NV index: public area, read errors, data file
 //	tpm/nv/<index>.bin   content of every readable index of the TCG range
-//	analysis/...         files added by the creator (e.g. tpm2-ek debug)
+//	analysis/...         files added by the creator (e.g. tpm2-verifier debug)
 //
 // A bundle contains the EK certificate, which uniquely identifies the TPM.
 package bundle
@@ -81,7 +81,7 @@ type Bundle struct {
 
 // CollectOptions configure Collect.
 type CollectOptions struct {
-	// Tool is recorded in the manifest, e.g. "tpm2-ek v0.3.0".
+	// Tool is recorded in the manifest, e.g. "tpm2-verifier v0.3.0".
 	Tool string
 	// TPM is the spec used to open the TPM, recorded in the manifest.
 	TPM string
