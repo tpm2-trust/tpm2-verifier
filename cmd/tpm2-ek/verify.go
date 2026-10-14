@@ -36,9 +36,13 @@ func runVerify(args []string, stdout io.Writer) error {
 	verbose := fs.Bool("v", false, "show fingerprints, quirks and revocation details")
 	overlay := fs.String("store", "", "additional vendor store directory")
 	crlf := addCRLFlags(fs)
+	pf := addProveFlags(fs)
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
+	}
+	if *pf.prove && len(pos) > 0 {
+		return fmt.Errorf("-prove needs the TPM; it cannot be used with certificate files")
 	}
 	st, err := loadStore(*overlay)
 	if err != nil {
@@ -75,7 +79,7 @@ func runVerify(args []string, stdout io.Writer) error {
 	}
 
 	if len(pos) == 0 {
-		return verifyFromTPM(*spec, st, opts, *asJSON, *verbose, stdout)
+		return verifyFromTPM(*spec, st, opts, pf, *asJSON, *verbose, stdout)
 	}
 
 	var certs []*certparse.Certificate
@@ -156,7 +160,7 @@ func printReport(w io.Writer, name string, r *verify.Report, verbose bool) {
 	}
 }
 
-func verifyFromTPM(spec string, st *store.Store, opts []verify.Option, asJSON, verbose bool, stdout io.Writer) error {
+func verifyFromTPM(spec string, st *store.Store, opts []verify.Option, pf proveFlags, asJSON, verbose bool, stdout io.Writer) error {
 	ctx := context.Background()
 	s, err := scanTPM(ctx, spec)
 	if err != nil {
@@ -165,6 +169,11 @@ func verifyFromTPM(spec string, st *store.Store, opts []verify.Option, asJSON, v
 	results, err := verifyScan(ctx, s, st, opts)
 	if err != nil {
 		return err
+	}
+	if *pf.prove {
+		if err := proveResults(ctx, spec, s, results, pf); err != nil {
+			return err
+		}
 	}
 	if asJSON {
 		enc := json.NewEncoder(stdout)
@@ -181,6 +190,7 @@ func verifyFromTPM(spec string, st *store.Store, opts []verify.Option, asJSON, v
 				fmt.Fprintln(stdout)
 			}
 			printReport(stdout, "TPM "+r.Index+" ("+r.Label+")", r.Report, verbose)
+			printPossession(stdout, r)
 		}
 	}
 	return resultsExit(results)

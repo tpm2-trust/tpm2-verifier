@@ -40,6 +40,10 @@ type ObservedEK struct {
 	Model     string   `yaml:"model,omitempty" json:"model,omitempty"`
 	Version   string   `yaml:"version,omitempty" json:"version,omitempty"`
 	Quirks    []string `yaml:"quirks,omitempty,flow" json:"quirks,omitempty"`
+	// Possession is the result of tpm2-ek -prove with the EK template used,
+	// e.g. "proven (TCG template L-1 (RSA 2048))"; key-mismatch means the
+	// vendor does not use the TCG default template.
+	Possession string `yaml:"possession,omitempty" json:"possession,omitempty"`
 }
 
 func observe(info *vendorinfo.Info, now time.Time) Observation {
@@ -63,6 +67,9 @@ func observe(info *vendorinfo.Info, now time.Time) Observation {
 	}
 	for _, ek := range info.EK {
 		e := ObservedEK{Index: ek.Index, Label: ek.Label, Levels: ek.Structure.Levels, Structure: ek.Structure.Summary}
+		if p := ek.Possession; p != nil {
+			e.Possession = fmt.Sprintf("%s (%s)", p.Status, p.Template)
+		}
 		if len(ek.Chain) > 0 {
 			if tp := ek.Chain[0].TPM; tp != nil {
 				e.Model, e.Version = tp.Model, tp.Version
@@ -129,14 +136,14 @@ func observationsMarkdown(obs []Observation) string {
 	var b strings.Builder
 	b.WriteString(readmeBegin + "\n\n## Observed TPMs\n\n")
 	b.WriteString("From submitted debug bundles and debug-anon output (see `observations.yaml`).\n\n")
-	b.WriteString("| Firmware | Vendor string | EK | Levels | Chain (root first) | Quirks | First seen |\n|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Firmware | Vendor string | EK | Levels | Chain (root first) | Quirks | Possession | First seen |\n|---|---|---|---|---|---|---|---|\n")
 	for _, o := range obs {
 		for _, e := range o.EK {
-			fmt.Fprintf(&b, "| %s | %s | `%s` %s | %d | %s | %s | %s |\n",
-				o.Firmware, o.VendorString, e.Index, e.Label, e.Levels, e.Structure, strings.Join(e.Quirks, ", "), o.FirstSeen)
+			fmt.Fprintf(&b, "| %s | %s | `%s` %s | %d | %s | %s | %s | %s |\n",
+				o.Firmware, o.VendorString, e.Index, e.Label, e.Levels, e.Structure, strings.Join(e.Quirks, ", "), e.Possession, o.FirstSeen)
 		}
 		if len(o.EK) == 0 {
-			fmt.Fprintf(&b, "| %s | %s | none | | | | %s |\n", o.Firmware, o.VendorString, o.FirstSeen)
+			fmt.Fprintf(&b, "| %s | %s | none | | | | | %s |\n", o.Firmware, o.VendorString, o.FirstSeen)
 		}
 	}
 	b.WriteString("\n" + readmeEnd + "\n")

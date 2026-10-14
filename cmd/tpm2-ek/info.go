@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mrwiora/tpm2-verifier/bundle"
+	"github.com/mrwiora/tpm2-verifier/possession"
 	"github.com/mrwiora/tpm2-verifier/store"
 	"github.com/mrwiora/tpm2-verifier/tpm"
 	"github.com/mrwiora/tpm2-verifier/verify"
@@ -58,6 +59,10 @@ type ekResult struct {
 	Index  string         `json:"index"`
 	Label  string         `json:"label"`
 	Report *verify.Report `json:"report"`
+	// Possession is the proof of EK possession (-prove).
+	Possession *possession.Result `json:"possession,omitempty"`
+
+	index uint32
 }
 
 // verifyScan verifies every EK certificate found in the scan, using all
@@ -82,7 +87,7 @@ func verifyScan(ctx context.Context, s *tpm.Scan, st *store.Store, opts []verify
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ekResult{Index: tpm.HexIndex(e.Index), Label: e.Label.String(), Report: rep})
+		out = append(out, ekResult{Index: tpm.HexIndex(e.Index), Label: e.Label.String(), Report: rep, index: e.Index})
 	}
 	return out, nil
 }
@@ -99,6 +104,7 @@ func runInfo(args []string, stdout io.Writer) error {
 	overlay := fs.String("store", "", "additional vendor store directory")
 	revMode := fs.String("revocation", "best-effort", "revocation mode: off, best-effort, require")
 	crlf := addCRLFlags(fs)
+	pf := addProveFlags(fs)
 	if pos, err := parseInterleaved(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
@@ -122,6 +128,11 @@ func runInfo(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if *pf.prove {
+		if err := proveResults(ctx, *spec, s, results, pf); err != nil {
+			return err
+		}
+	}
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
@@ -134,12 +145,14 @@ func runInfo(args []string, stdout io.Writer) error {
 	return resultsExit(results)
 }
 
+// resultsExit returns exit status 1 unless every EK certificate is trusted
+// and, if a proof was made, proven.
 func resultsExit(results []ekResult) error {
 	if len(results) == 0 {
 		return exitError(1)
 	}
 	for _, r := range results {
-		if r.Report.Status != verify.StatusTrusted {
+		if r.Report.Status != verify.StatusTrusted || r.Possession != nil && r.Possession.Status != possession.StatusProven {
 			return exitError(1)
 		}
 	}
@@ -218,6 +231,7 @@ func printInfo(w io.Writer, s *tpm.Scan, st *store.Store, results []ekResult, ve
 	trusted := true
 	for _, r := range results {
 		printReport(w, "EK certificate "+r.Index+" ("+r.Label+")", r.Report, verbose)
+		printPossession(w, r)
 		fmt.Fprintln(w)
 		trusted = trusted && r.Report.Status == verify.StatusTrusted
 	}

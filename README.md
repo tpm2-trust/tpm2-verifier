@@ -27,6 +27,7 @@ No cgo, no openssl needed. Linux first; it builds and runs on Windows too.
 # verified up to the vendor root, every CA checked against its CRL
 tpm2-ek info            # -v for attributes, fingerprints, CRL details; -json
 
+tpm2-ek info -prove     # also prove that this TPM holds the EK's private key (see below)
 tpm2-ek verify          # only the verification of the EK certificates in the TPM
 tpm2-ek export -o out   # EK certs, chain, raw NV, vendor CAs + matching openssl command
 tpm2-ek debug           # debug bundle for unknown vendors / bug reports (see below)
@@ -122,6 +123,55 @@ is used with a warning. A CRL with a lower CRL number never replaces a newer
 cached one. `-offline` uses the cache only, `-no-fetch` disables all
 downloads (CRLs and AIA), `-crl file` adds local CRLs.
 
+## Proving the TPM is genuine (`-prove`)
+
+A trusted chain shows that the EK certificate stored in the TPM was issued
+by the vendor. It does not show that the TPM you are talking to is the one
+it was issued for: a certificate can be copied into the NV of another TPM,
+or of a software TPM. `-prove` (for `info`, `verify`, `debug` and
+`debug-anon`) closes that gap for every EK certificate:
+
+1. The EK is created again from its TCG template (`TPM2_CreatePrimary` in the
+   endorsement hierarchy; the TPM always derives the same key from its
+   endorsement seed) and compared with the public key in the certificate.
+   A vendor template in the EK template index and a nonce in the EK nonce
+   index (low range) are used as the TCG EK Credential Profile specifies.
+2. A random secret is encrypted to the **certificate's** public key
+   (MakeCredential, in software) and the TPM is asked to decrypt it with
+   `TPM2_ActivateCredential` using the EK. Only a TPM holding the private
+   key returns the secret.
+
+```
+Possession: PROVEN (TCG template L-1 (RSA 2048), 1.4s)
+  the TPM decrypted a credential encrypted to the certificate's public key (TPM2_ActivateCredential)
+Verdict: GENUINE: the certificate chains to vendor intel and this TPM holds its private key
+```
+
+| Possession | Meaning |
+|------------|---------|
+| `proven` | the TPM holds the certificate's private key |
+| `key-mismatch` | the EK created from the template is another key: the certificate belongs to another TPM, or the vendor uses a non-default EK template |
+| `failed` | the TPM reports the certificate's key but cannot use it: an impostor |
+| `unsupported` | no proof possible: replayed bundle, SM2 (H-5), unknown index |
+| `error` | a TPM command failed, e.g. the endorsement hierarchy has a password (`-endorsement-auth`) |
+
+With `-prove`, the exit status is 0 only if every EK certificate is trusted
+**and** proven. Step 1 alone proves nothing (a fake TPM can return any public
+key); it tells a wrong template apart from a wrong TPM. The proof needs the
+live TPM: replaying a bundle reports `unsupported`, `debug` records the
+result in `analysis/possession.json`, `debug-anon` records status and
+template, and `vendor import` shows them per observation.
+
+Templates: L-1/L-2 (low range) are the go-tpm reference templates. H-1 to
+H-7 (high range) use the PolicyB digests of the TCG EK Credential Profile
+2.5; they are tested with swtpm, not yet against vendor hardware. A wrong
+template can only cause `key-mismatch`, never a false `proven`.
+
+Like any local check, this trusts the software on the machine it runs on. To
+attest a remote machine, the verifier must run elsewhere and send the
+credential to it (remote attestation), which is outside the scope of this
+tool.
+
 ## Debug bundles for unknown vendors
 
 ```bash
@@ -194,6 +244,7 @@ replayed by the tests and must still produce the status recorded in it.
 ```go
 import (
 	"github.com/mrwiora/tpm2-verifier/fetch"
+	"github.com/mrwiora/tpm2-verifier/possession"
 	"github.com/mrwiora/tpm2-verifier/store"
 	"github.com/mrwiora/tpm2-verifier/tpm"
 	"github.com/mrwiora/tpm2-verifier/verify"
@@ -214,6 +265,12 @@ for _, ek := range scan.EKCertificates() {
 	for _, l := range rep.Chain {
 		fmt.Println(l.Subject, l.Source, l.Revocation.Status, l.Revocation.Source)
 	}
+	// Prove that this TPM holds the EK (pass the EK template and nonce
+	// index contents for the low range if the TPM has them).
+	if d, ok := t.Backend().(*tpm.Device); ok {
+		res := possession.Prove(d.Transport(), ek.Index, ek.Certificates[0].PublicKey, nil, nil, possession.Options{})
+		fmt.Println(res.Status) // proven
+	}
 }
 ```
 
@@ -231,6 +288,7 @@ Files instead of a TPM: `certparse.Parse(ekDER)`, `certparse.ParseAll(chainBlob)
 | `certparse` | DER chain splitting, certificate parsing with TCG extensions (critical subjectAltName with TPM identity, EK EKU), CRL distribution points with `cRLIssuer`, indirect CRLs, SHA-1 signatures of legacy vendor PKIs |
 | `store`     | Loads and validates the vendor trust store (fingerprints, root self-signature, CA flag) |
 | `verify`    | Chain building and validation with a per-link report: signature, validity, path length, critical extensions, revocation |
+| `possession` | Proof that the TPM holds the EK certificate's private key: EK templates (TCG L-1/L-2, H-1..H-7, NV template and nonce), key comparison, MakeCredential/ActivateCredential |
 | `vendors`   | The embedded store data |
 
 Why not `x509.Certificate.Verify`? EK certificates have an empty subject with a
@@ -468,6 +526,35 @@ openssl verify -show_chain -crl_check_all -extended_crl \
   -trusted ... -untrusted ... ek-rsa.der
 ```
 
+### 9. Prove that the TPM holds the EK
+
+```bash
+# Create the EK from the default template; compare its key with the certificate's
+tpm2_createek -c ek.ctx -G rsa -u ek.pub
+tpm2_readpublic -c ek.ctx -f pem -o ek.pem
+openssl x509 -in ek-rsa.der -inform DER -pubkey -noout > ekcert-key.pem
+cmp ek.pem ekcert-key.pem && echo "EK matches the certificate"
+
+# A key to bind the credential to (null hierarchy)
+tpm2_createprimary -C n -G ecc -c obj.ctx
+tpm2_readpublic -c obj.ctx -n obj.name
+
+# Encrypt a random secret to the CERTIFICATE's key, in software
+head -c 32 /dev/urandom > secret.bin
+tpm2_makecredential -T none -u ekcert-key.pem -G rsa -s secret.bin \
+  -n "$(xxd -p -c 256 obj.name)" -o cred.bin
+
+# Let the TPM decrypt it with the EK (low range EKs need PolicySecret(endorsement))
+tpm2_startauthsession --policy-session -S session.ctx
+tpm2_policysecret -S session.ctx -c e
+tpm2_activatecredential -c obj.ctx -C ek.ctx -i cred.bin -o actual.bin -P "session:session.ctx"
+tpm2_flushcontext session.ctx
+cmp secret.bin actual.bin && echo "PROVEN: this TPM holds the EK of the certificate"
+```
+
+Tested with tpm2-tools 5 against swtpm (without a resource manager, run
+`tpm2_flushcontext -t` between the commands). For the ECC EK use `-G ecc`.
+
 ## Roadmap
 
 | Phase | Content | State |
@@ -480,6 +567,8 @@ openssl verify -show_chain -crl_check_all -extended_crl \
 | 4 | Walk AIA up to the root for vendors without a stored chain | done |
 | 4b | Submissions: `vendor review`/`import`, observations, CI review of `submissions/` | done |
 | 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | next |
+| 6 | Proof of EK possession (`-prove`): recreate the EK from its template, MakeCredential/ActivateCredential | done |
+| 7 | EK certificates not stored in NV (AMD fTPM, older Intel PTT: download from the vendor's EK service by EK public key) | open |
 
 ## Development
 

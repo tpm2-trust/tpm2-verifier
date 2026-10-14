@@ -82,13 +82,19 @@ func (ca *CA) IssueCA(t testing.TB, name pkix.Name, extra ...pkix.Extension) *CA
 // Issue signs an arbitrary template with this CA. A fresh key is generated.
 func (ca *CA) Issue(t testing.TB, tmpl *x509.Certificate) *x509.Certificate {
 	t.Helper()
+	return ca.IssueFor(t, tmpl, newKey(t).Public())
+}
+
+// IssueFor signs a template for the public key pub, e.g. a TPM's EK.
+func (ca *CA) IssueFor(t testing.TB, tmpl *x509.Certificate, pub any) *x509.Certificate {
+	t.Helper()
 	if tmpl.SerialNumber == nil {
 		tmpl.SerialNumber = big.NewInt(serial.Add(1))
 	}
 	if tmpl.IssuingCertificateURL == nil {
 		tmpl.IssuingCertificateURL = []string{AIAURL(ca.Cert)}
 	}
-	return create(t, tmpl, ca.Cert, newKey(t).Public(), ca.Key)
+	return create(t, tmpl, ca.Cert, pub, ca.Key)
 }
 
 // CRL creates a DER encoded CRL signed by this CA.

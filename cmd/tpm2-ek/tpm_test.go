@@ -13,6 +13,7 @@ import (
 
 	"github.com/mrwiora/tpm2-verifier/bundle"
 	"github.com/mrwiora/tpm2-verifier/internal/swtpmtest"
+	"github.com/mrwiora/tpm2-verifier/possession"
 	"github.com/mrwiora/tpm2-verifier/tpm"
 )
 
@@ -220,5 +221,63 @@ func TestVendorImport(t *testing.T) {
 	}
 	if code, _, stderr := runCLI("vendor", "review", "-anon-only", "-vendors", vendors, "-no-fetch", full); code != 2 || !strings.Contains(stderr, "full debug bundle") {
 		t.Errorf("-anon-only: exit %d %s", code, stderr)
+	}
+}
+
+// TestProve: an EK certificate for the swtpm's own EK is proven; the
+// fixture's certificate (copied, for another key) is not.
+func TestProve(t *testing.T) {
+	f := newFixture(t, false)
+	spec := swtpmtest.Start(t)
+	tp, err := tpm.Open(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tp.Backend().(*tpm.Device).Transport()
+	ekPub, _, err := possession.EKPublicKey(tr, 0x01C00002, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genuine := f.pki.IssueEK(t, ekPub)
+	swtpmtest.Define(t, tr, 0x01C00002, swtpmtest.EKCertAttrs, 0, genuine.Raw)
+	swtpmtest.Define(t, tr, 0x01C0000A, swtpmtest.EKCertAttrs, 0, f.pki.EK.Raw) // copied from another TPM
+	swtpmtest.Define(t, tr, 0x01C00100, swtpmtest.EKCertAttrs, 0, f.pki.DeviceChain())
+	tp.Close()
+
+	code, stdout, stderr := runCLI("info", "-prove", "-tpm", spec, "-store", f.store, "-no-fetch")
+	if code != 1 {
+		t.Errorf("exit %d (one EK is not proven)\n%s", code, stderr)
+	}
+	for _, want := range []string{
+		"Possession: PROVEN (TCG template L-1 (RSA 2048)",
+		"Verdict: GENUINE: the certificate chains to vendor synthetic and this TPM holds its private key",
+		"Possession: KEY-MISMATCH (TCG template L-2 (ECC NIST P-256)",
+		"Verdict: NOT PROVEN: the certificate is not for this TPM's EK",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("missing %q in\n%s", want, stdout)
+		}
+	}
+	code, stdout, _ = runCLI("verify", "-prove", "-json", "-tpm", spec, "-store", f.store, "-no-fetch")
+	if code != 1 || !strings.Contains(stdout, `"status": "proven"`) || !strings.Contains(stdout, `"status": "key-mismatch"`) {
+		t.Errorf("verify -prove -json: exit %d\n%s", code, stdout)
+	}
+
+	// Recorded bundles cannot prove anything.
+	b := filepath.Join(f.dir, "debug.tar.gz")
+	if code, _, stderr := runCLI("debug", "-prove", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", b); code != 0 {
+		t.Fatal(stderr)
+	}
+	if _, stdout, _ := runCLI("info", "-prove", "-tpm", "bundle:"+b, "-store", f.store, "-no-fetch"); !strings.Contains(stdout, "Possession: UNSUPPORTED") {
+		t.Errorf("bundle replay:\n%s", stdout)
+	}
+	// debug-anon records the result (status and template only).
+	anon := filepath.Join(f.dir, "anon")
+	if code, stdout, stderr := runCLI("debug-anon", "-prove", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", anon); code != 0 || !strings.Contains(stdout, "possession PROVEN (TCG template L-1 (RSA 2048))") {
+		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
+	}
+	info, _ := os.ReadFile(filepath.Join(anon, "info.json"))
+	if !strings.Contains(string(info), `"status": "proven"`) {
+		t.Errorf("info.json lacks the proof")
 	}
 }

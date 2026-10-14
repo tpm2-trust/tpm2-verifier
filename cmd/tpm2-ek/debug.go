@@ -31,6 +31,7 @@ func runDebug(args []string, stdout io.Writer) error {
 	noPlatform := fs.Bool("no-platform", false, "do not record kernel, sysfs and DMI information")
 	overlay := fs.String("store", "", "additional vendor store directory")
 	crlf := addCRLFlags(fs)
+	pf := addProveFlags(fs)
 	if pos, err := parseInterleaved(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
@@ -72,6 +73,21 @@ func runDebug(args []string, stdout io.Writer) error {
 	results, err := verifyScan(ctx, s, st, opts)
 	if err != nil {
 		return err
+	}
+	if *pf.prove {
+		// Needs the live TPM; the result is recorded, a replay cannot repeat it.
+		if err := proveResults(ctx, *spec, s, results, pf); err != nil {
+			return err
+		}
+		var proofs []any
+		for _, r := range results {
+			proofs = append(proofs, r.Possession)
+		}
+		data, err := json.MarshalIndent(proofs, "", "  ")
+		if err != nil {
+			return err
+		}
+		b.Extra["analysis/possession.json"] = append(data, '\n')
 	}
 	var summary bytes.Buffer
 	printInfo(&summary, s, st, results, true)
@@ -146,6 +162,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	fs.Var(&include, "include", "SHA-256 of a certificate from the TPM to include in full (a vendor CA\nshared by all devices but published nowhere; repeatable)")
 	overlay := fs.String("store", "", "additional vendor store directory")
 	crlf := addCRLFlags(fs)
+	pf := addProveFlags(fs)
 	if pos, err := parseInterleaved(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
@@ -169,9 +186,14 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if *pf.prove {
+		if err := proveResults(ctx, *spec, s, results, pf); err != nil {
+			return err
+		}
+	}
 	var eks []vendorinfo.EKReport
 	for i, e := range s.EKCertificates() {
-		eks = append(eks, vendorinfo.EKReport{Index: e.Index, Report: results[i].Report})
+		eks = append(eks, vendorinfo.EKReport{Index: e.Index, Report: results[i].Report, Possession: results[i].Possession})
 	}
 	var published map[string]string
 	if f := crlf.fetcher(); f != nil {
@@ -220,6 +242,9 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "TPM:  %s (%s), firmware %s\n", s.Info.Manufacturer, s.Info.VendorString, s.Info.FirmwareVersion)
 	for _, ek := range info.EK {
 		fmt.Fprintf(stdout, "EK:   %s %s, %d levels: %s\n", ek.Index, strings.ToUpper(string(ek.Status)), ek.Structure.Levels, ek.Structure.Summary)
+		if p := ek.Possession; p != nil {
+			fmt.Fprintf(stdout, "      possession %s (%s)\n", strings.ToUpper(string(p.Status)), p.Template)
+		}
 	}
 	fmt.Fprintf(stdout, "\nIncluded in full (public):\n")
 	if len(info.Certificates) == 0 {

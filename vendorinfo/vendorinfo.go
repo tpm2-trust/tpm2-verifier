@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/mrwiora/tpm2-verifier/certparse"
+	"github.com/mrwiora/tpm2-verifier/possession"
 	"github.com/mrwiora/tpm2-verifier/store"
 	"github.com/mrwiora/tpm2-verifier/tpm"
 	"github.com/mrwiora/tpm2-verifier/verify"
@@ -64,6 +65,8 @@ type Options struct {
 type EKReport struct {
 	Index  uint32
 	Report *verify.Report
+	// Possession is the proof of EK possession, if one was made.
+	Possession *possession.Result
 }
 
 // Info is the content of info.json.
@@ -115,10 +118,19 @@ type EK struct {
 	Label  string        `json:"label"`
 	Status verify.Status `json:"status"`
 	Vendor string        `json:"vendor,omitempty"`
+	// Possession is the result of the proof of EK possession, if one was
+	// made: it shows whether the vendor's EKs follow the TCG templates.
+	Possession *Possession `json:"possession,omitempty"`
 	// Structure summarizes the chain: levels and certificate types.
 	Structure Structure `json:"structure"`
 	// Chain starts with the EK certificate.
 	Chain []Cert `json:"chain"`
+}
+
+// Possession is the non-identifying part of a possession.Result.
+type Possession struct {
+	Status   possession.Status `json:"status"`
+	Template string            `json:"template,omitempty"`
 }
 
 // Roles of certificates in a chain.
@@ -362,6 +374,9 @@ func Build(s *tpm.Scan, eks []EKReport, st *store.Store, opts Options) (*Info, e
 			ek.Chain = append(ek.Chain, d)
 		}
 		ek.Structure = structure(ek.Chain, ek.Status)
+		if p := r.Possession; p != nil {
+			ek.Possession = &Possession{Status: p.Status, Template: p.Template}
+		}
 		info.EK = append(info.EK, ek)
 	}
 	if err := info.buildDraft(s, eks, st, created); err != nil {
