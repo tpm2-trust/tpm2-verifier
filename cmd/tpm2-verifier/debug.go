@@ -29,7 +29,7 @@ func runDebug(args []string, stdout io.Writer) error {
 	spec := addTPMFlag(fs)
 	out := fs.String("o", "", "output file (default tpm2-verifier-debug-<manufacturer>-<time>.tar.gz)")
 	noPlatform := fs.Bool("no-platform", false, "do not record kernel, sysfs and DMI information")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	crlf := addCRLFlags(fs)
 	pf := addProveFlags(fs)
 	if pos, err := parseInterleaved(fs, args); err != nil {
@@ -41,7 +41,7 @@ func runDebug(args []string, stdout io.Writer) error {
 	if strings.HasPrefix(*spec, "bundle:") {
 		return fmt.Errorf("-tpm bundle: replays a bundle; debug needs a TPM")
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}
@@ -92,6 +92,7 @@ func runDebug(args []string, stdout io.Writer) error {
 	var summary bytes.Buffer
 	printInfo(&summary, s, st, results, true)
 	b.Extra["analysis/summary.txt"] = summary.Bytes()
+	b.Extra["analysis/vendor-data.txt"] = fmt.Appendf(nil, "%s: %s\n", sf.result.Dir, sf.result.Describe())
 	report, err := json.MarshalIndent(infoJSON(s, st, results), "", "  ")
 	if err != nil {
 		return err
@@ -160,7 +161,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	strict := fs.Bool("strict", false, "redact all name values of device specific CAs except C and O\n(default: only serial numbers, IDs and long hex/digit runs)")
 	var include stringList
 	fs.Var(&include, "include", "SHA-256 of a certificate from the TPM to include in full (a vendor CA\nshared by all devices but published nowhere; repeatable)")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	crlf := addCRLFlags(fs)
 	pf := addProveFlags(fs)
 	if pos, err := parseInterleaved(fs, args); err != nil {
@@ -169,7 +170,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 		fs.Usage()
 		return exitError(2)
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}
@@ -289,7 +290,7 @@ func runDebugAnon(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "\nDraft vendor directory: %s\n", draft)
 	if !archive {
-		fmt.Fprintf(stdout, "Try it:  tpm2-verifier info -store %s\n", filepath.Dir(draft))
+		fmt.Fprintf(stdout, "Try it:  tpm2-verifier info -allow-unsigned -store %s\n", filepath.Dir(draft))
 	}
 	return nil
 }

@@ -67,7 +67,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Embedded()
+	st, err := store.LoadDir("../vendors")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestBuild(t *testing.T) {
 			t.Errorf("vendor.yaml lacks %q:\n%s", want, y)
 		}
 	}
-	st, err := store.Embedded()
+	st, err := store.LoadDir("../vendors")
 	if err != nil {
 		t.Fatal(err)
 	}

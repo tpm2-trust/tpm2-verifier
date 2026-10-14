@@ -2,7 +2,8 @@
 
 A pure Go library and CLI (`tpm2-verifier`) to inspect and verify TPM 2.0
 endorsement key (EK) certificates and their vendor certificate chains, with a
-curated, fingerprint-pinned store of TPM vendor root CAs.
+curated, fingerprint-pinned store of TPM vendor root CAs, shipped as a signed
+data directory next to the binary.
 
 It is the Go successor of [intel-ek-dechainer](https://github.com/mrwiora/intel-ek-dechainer)
 and does everything it did (split the per-device chain from NV, verify against
@@ -22,6 +23,20 @@ a Debian 13 package; the Arch package is also in the AUR (`tpm2-verifier`).
 sudo pacman -U tpm2-verifier-*.pkg.tar.zst      # Arch Linux (or: yay -S tpm2-verifier)
 sudo apt install ./tpm2-verifier_*.deb          # Debian / Ubuntu
 go install github.com/tpm2-trust/tpm2-verifier/cmd/tpm2-verifier@latest
+```
+
+The vendor data (`vendors/`) is not compiled in: tpm2-verifier uses
+`./vendors` in the working directory, or the directory given with `-store`,
+and stops with an error if there is none. The packages install it to
+`/usr/share/tpm2-verifier/vendors`; with the binaries, download
+`tpm2-verifier-vendors-<version>.tar.gz` from the release. Updated vendor data
+can be dropped in without a new binary; see [Vendor data](#vendor-data) for
+how it is checked.
+
+```bash
+tpm2-verifier version -store /usr/share/tpm2-verifier/vendors
+# tpm2-verifier v0.1.0
+# vendor data /usr/share/tpm2-verifier/vendors: version 2026.10.14, 5 files, manifest sha256 8a2e72bca53fca22, signed by ...
 ```
 
 No cgo, no openssl needed. Linux first; it builds and runs on Windows too.
@@ -47,6 +62,8 @@ tpm2-verifier split -o out chain.der              # one file per certificate
 tpm2-verifier split -p intel-int -s 3 chain.der   # intel-ek-dechainer naming: intel-int3..5.der
 
 tpm2-verifier store list | show intel | export -o certs
+tpm2-verifier store verify                        # check vendors/ against its signed MANIFEST
+tpm2-verifier version                             # program and vendor data version
 tpm2-verifier cache list | clear | path
 
 # Maintainers: turn submissions into vendor store changes (see below)
@@ -206,7 +223,7 @@ machine. Share bundles only with people you trust with that, or use
 
 ```bash
 sudo tpm2-verifier debug-anon -o ifx            # directory; .tar.gz/.tgz writes an archive
-tpm2-verifier info -store ifx/vendor            # try the draft vendor directory
+tpm2-verifier info -allow-unsigned -store ifx/vendor   # try the draft vendor directory
 tpm2-verifier debug-anon -tpm bundle:debug.tar.gz -o ifx.tar.gz   # from an existing bundle
 ```
 
@@ -263,7 +280,8 @@ defer t.Close()
 scan, _ := t.Scan(ctx)                    // identity + all TCG NV indices, parsed
 fmt.Println(scan.Info.Manufacturer)       // "INTC"
 
-st, _ := store.Default()                  // embedded vendors + local overlay
+// vendors/, checked against its MANIFEST, signed by a built-in key
+st, _, _ := store.Open("vendors", store.OpenOptions{})
 cacheDir, _ := fetch.DefaultCacheDir()
 v := verify.New(st, verify.WithCRLFetcher(fetch.New(fetch.WithCacheDir(cacheDir))))
 
@@ -297,7 +315,7 @@ Files instead of a TPM: `certparse.Parse(ekDER)`, `certparse.ParseAll(chainBlob)
 | `store`     | Loads and validates the vendor trust store (fingerprints, root self-signature, CA flag) |
 | `verify`    | Chain building and validation with a per-link report: signature, validity, path length, critical extensions, revocation |
 | `possession` | Proof that the TPM holds the EK certificate's private key: EK templates (TCG L-1/L-2, H-1..H-7, NV template and nonce), key comparison, MakeCredential/ActivateCredential |
-| `vendors`   | The embedded store data |
+| `manifest`  | The vendor data MANIFEST (SHA-256 of every file, version) and its SSH signature |
 
 Why not `x509.Certificate.Verify`? EK certificates have an empty subject with a
 *critical* subjectAltName that only holds a TCG `directoryName`. The standard
@@ -307,10 +325,12 @@ and returns one error instead of a report per link.
 If a vendor uses negative serial numbers, programs using the library need
 `//go:debug x509negativeserial=1` in their main package (`tpm2-verifier` has it).
 
-## Vendor store
+## Vendor data
 
 ```
 vendors/
+├── MANIFEST                        # SHA-256 of every file + version
+├── MANIFEST.sig                    # ssh-keygen -Y sign signature of MANIFEST
 └── intel/
     ├── vendor.yaml                 # metadata + certificate manifest
     ├── README.md                   # the vendor's PKI hierarchy and quirks
@@ -338,10 +358,50 @@ Rules: every certificate file must be listed with its SHA-256 and source URL
 (enforced by tests); roots must be self-signed CAs. Only roots are trust
 anchors; intermediates only help to build chains.
 
-**Local overlay:** the same layout in `~/.config/tpm2-verifier/vendors/`
-(`%AppData%\tpm2-verifier\vendors` on Windows) or a directory passed with
-`-store` is loaded on top of the embedded store. A vendor with an existing ID is
-merged (certificates added). Use it for vendors that are not curated yet.
+### Where it is found, and how it is checked
+
+Every command that needs the vendor data uses `./vendors`, or the directory
+given with `-store`; nothing else is loaded. A missing directory is an error.
+
+The vendor data holds the trust anchors, and it is a directory outside the
+binary that someone else may have written (think of `sudo tpm2-verifier` in a
+directory you do not own). So before it is used:
+
+1. `MANIFEST` must list exactly the files present, with matching SHA-256.
+   It has the `sha256sum` format: `cd vendors && sha256sum -c MANIFEST`.
+2. `MANIFEST.sig` must be a valid SSH signature of `MANIFEST` (namespace
+   `tpm2-verifier-vendors`) by an ed25519 key listed in
+   [`manifest/allowed_signers`](manifest/allowed_signers), which is compiled
+   into the binary. The data is read once and used from memory, so files
+   changed after the check are not used.
+
+A mismatch or a broken signature is always an error. Data without a
+signature by a trusted key (a working copy, a draft vendor directory,
+your own CAs) is refused unless you pass `-allow-unsigned`; the hashes are
+still checked if there is a `MANIFEST`, and a warning shows the data used.
+Without signature the check only guards against accidents: anyone who can
+write the directory can also rewrite the `MANIFEST`.
+
+The version in `MANIFEST` is the date of the change (`2026.10.14`, then
+`2026.10.14.2`, ...). `tpm2-verifier version` and `store verify` print it
+together with the digest of the `MANIFEST` and the signer; debug bundles
+record it in `analysis/vendor-data.txt`.
+
+Maintainers, after changing `vendors/` by hand (`vendor import` does this
+itself):
+
+```bash
+tpm2-verifier store manifest                    # new MANIFEST and version; removes the stale signature
+ssh-keygen -Y sign -f ~/.ssh/<key> -n tpm2-verifier-vendors vendors/MANIFEST   # writes MANIFEST.sig
+tpm2-verifier store verify                      # OK only if signed by a key in manifest/allowed_signers
+# independent of tpm2-verifier:
+ssh-keygen -Y verify -f manifest/allowed_signers -I <principal> -n tpm2-verifier-vendors -s vendors/MANIFEST.sig < vendors/MANIFEST
+```
+
+The release workflow refuses to release vendor data that `store verify`
+does not accept, and publishes it as `tpm2-verifier-vendors-<version>.tar.gz`
+and in the packages. Signing happens on the maintainer's machine; the key is
+not in CI.
 
 Optional `domains: [tsci.intel.com]` lists the hosts the vendor publishes
 certificates on; `vendor import` holds back certificates from other hosts.
@@ -349,7 +409,7 @@ certificates on; `vendor import` holds back certificates from other hosts.
 seen in submissions; the README of the vendor shows them between generated
 markers.
 
-### Extending the vendor store from submissions
+### Extending the vendor data from submissions
 
 Users send `tpm2-verifier debug-anon` output (or, privately, full `debug`
 bundles), see [submissions/](submissions/README.md). A pull request that adds a
@@ -362,6 +422,7 @@ tpm2-verifier vendor import submissions/x.tar.gz        # write vendors/<id>/
 tpm2-verifier vendor import -accept <sha256> ...        # approve a root or flagged CA
 tpm2-verifier vendor import -fixture testdata/bundles debug.tar.gz   # keep a full bundle as test fixture (with consent)
 git diff vendors/
+ssh-keygen -Y sign -f ~/.ssh/<key> -n tpm2-verifier-vendors vendors/MANIFEST
 ```
 
 The import changes `vendors/<id>/`: certificate files in `roots/` and
@@ -369,8 +430,9 @@ The import changes `vendors/<id>/`: certificate files in `roots/` and
 layout stay (new vendors get a generated file with `description: TODO`);
 `observations.yaml` (firmware, vendor string, NV layout, chain structure,
 quirks; no device data; importing the same TPM twice adds nothing); and the
-generated block of `README.md`. If the result does not load as a store,
-every change is undone.
+generated block of `README.md`. It also writes a new `MANIFEST` and removes
+the old signature, so the result has to be signed again. If the result does
+not load as a store, every change is undone.
 
 Nothing in a submission is trusted:
 
@@ -574,6 +636,7 @@ Tested with tpm2-tools 5 against swtpm (without a resource manager, run
 | 3 | Debug bundle for unknown vendors (`tpm2-verifier debug`), replayable with `-tpm bundle:` and as test fixture; `debug-anon` with a draft vendor directory | done |
 | 4 | Walk AIA up to the root for vendors without a stored chain | done |
 | 4b | Submissions: `vendor review`/`import`, observations, CI review of `submissions/` | done |
+| 4c | Vendor data as a directory next to the binary, with a versioned, SSH-signed `MANIFEST` | done |
 | 5 | More vendors: Infineon, STMicro, Nuvoton, AMD fTPM, Microsoft, Google | next |
 | 6 | Proof of EK possession (`-prove`): recreate the EK from its template, MakeCredential/ActivateCredential | done |
 | 7 | EK certificates not stored in NV (AMD fTPM, older Intel PTT: download from the vendor's EK service by EK public key) | open |

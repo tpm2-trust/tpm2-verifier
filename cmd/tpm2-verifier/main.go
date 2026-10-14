@@ -42,7 +42,7 @@ func commands() []command {
 		{"store", "list, show and export the vendor trust store", runStore},
 		{"vendor", "maintainers: review and import submissions into the vendor directory", runVendor},
 		{"cache", "list or clear the CRL and certificate cache", runCache},
-		{"version", "print the version", runVersion},
+		{"version", "print the version of the program and the vendor data", runVersion},
 	}
 }
 
@@ -59,6 +59,7 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	warnOut = stderr
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		usage(stderr)
 		if len(args) == 0 {
@@ -89,8 +90,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 2
 }
 
-func runVersion(_ []string, stdout io.Writer) error {
+func runVersion(args []string, stdout io.Writer) error {
+	fs := newFlagSet("version", "", "Prints the version of tpm2-verifier and of the vendor data.")
+	dir := fs.String("store", defaultStore, "vendor data directory")
+	if pos, err := parseInterleaved(fs, args); err != nil {
+		return err
+	} else if len(pos) > 0 {
+		fs.Usage()
+		return exitError(2)
+	}
 	fmt.Fprintln(stdout, versionString())
+	fmt.Fprintf(stdout, "vendor data %s: %s\n", *dir, vendorDataVersion(*dir))
 	return nil
 }
 

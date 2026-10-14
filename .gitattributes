@@ -1,0 +1,3 @@
+# The vendor data is checked byte for byte against vendors/MANIFEST: no
+# line ending conversion (e.g. on Windows checkouts).
+vendors/** -text

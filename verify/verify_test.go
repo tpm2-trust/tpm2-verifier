@@ -101,7 +101,7 @@ func wantStatus(t *testing.T, r *verify.Report, want verify.Status) {
 }
 
 func TestRealIntelStaticChainWithCRLs(t *testing.T) {
-	s, err := store.Embedded()
+	s, err := store.LoadDir("../vendors")
 	if err != nil {
 		t.Fatal(err)
 	}

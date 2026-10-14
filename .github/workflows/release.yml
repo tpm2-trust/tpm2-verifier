@@ -97,6 +97,15 @@ jobs:
           ./dist/tpm2-verifier-linux-amd64 version | grep -qx "tpm2-verifier ${VERSION}" || {
             echo "ERROR: the binary does not report version ${VERSION}"; exit 1; }
 
+      # Only vendor data signed by a key in manifest/allowed_signers is
+      # released: sign vendors/MANIFEST before tagging.
+      - name: Verify and pack the vendor data
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          ./dist/tpm2-verifier-linux-amd64 store verify -store vendors
+          git archive --format=tar.gz -o "dist/tpm2-verifier-vendors-${VERSION}.tar.gz" HEAD vendors
+          tar -tzf "dist/tpm2-verifier-vendors-${VERSION}.tar.gz"
+
       - name: Create checksums
         run: |
           cd dist
@@ -215,7 +224,9 @@ jobs:
           for path in \
             usr/bin/tpm2-verifier \
             usr/share/doc/tpm2-verifier/README.md \
-            usr/share/licenses/tpm2-verifier/LICENSE
+            usr/share/licenses/tpm2-verifier/LICENSE \
+            usr/share/tpm2-verifier/vendors/MANIFEST \
+            usr/share/tpm2-verifier/vendors/MANIFEST.sig
           do
             if [[ ! -e "/tmp/package-test/${path}" ]]; then
               echo "ERROR: ${path} missing from the package"
@@ -228,8 +239,8 @@ jobs:
             exit 1
           fi
 
-          "/tmp/package-test/usr/bin/tpm2-verifier" version
-          "/tmp/package-test/usr/bin/tpm2-verifier" store list
+          "/tmp/package-test/usr/bin/tpm2-verifier" version -store /tmp/package-test/usr/share/tpm2-verifier/vendors
+          "/tmp/package-test/usr/bin/tpm2-verifier" store verify -store /tmp/package-test/usr/share/tpm2-verifier/vendors
 
           # Built with the current Go release, not pacman's.
           BUILT=$(go version -m /tmp/package-test/usr/bin/tpm2-verifier | head -1 | awk '{print $2}')
@@ -333,7 +344,9 @@ jobs:
 
           for path in \
             ./usr/bin/tpm2-verifier \
-            ./usr/share/doc/tpm2-verifier/copyright
+            ./usr/share/doc/tpm2-verifier/copyright \
+            ./usr/share/tpm2-verifier/vendors/MANIFEST \
+            ./usr/share/tpm2-verifier/vendors/MANIFEST.sig
           do
             dpkg-deb -c "$DEB" | awk '{print $NF}' | grep -qx "$path" || {
               echo "ERROR: ${path} missing from the package"
@@ -348,8 +361,8 @@ jobs:
             echo "ERROR: the packaged binary is not statically linked"
             exit 1
           }
-          /tmp/debcheck/usr/bin/tpm2-verifier version
-          /tmp/debcheck/usr/bin/tpm2-verifier store list
+          /tmp/debcheck/usr/bin/tpm2-verifier version -store /tmp/debcheck/usr/share/tpm2-verifier/vendors
+          /tmp/debcheck/usr/bin/tpm2-verifier store verify -store /tmp/debcheck/usr/share/tpm2-verifier/vendors
 
       - name: Create package checksums
         run: |
@@ -445,6 +458,7 @@ jobs:
           | \`tpm2-verifier-linux-amd64\`, \`tpm2-verifier-linux-arm64\` | Linux (static) |
           | \`tpm2-verifier-windows-amd64.exe\` | Windows (TBS) |
           | \`tpm2-verifier-darwin-amd64\`, \`tpm2-verifier-darwin-arm64\` | macOS (files, bundles, swtpm) |
+          | \`tpm2-verifier-vendors-${VERSION}.tar.gz\` | vendor data for the binaries (\`vendors/\`, signed MANIFEST) |
           | \`${PACKAGE_FILE}\` | Arch Linux |
           | \`${DEB_FILE}\` | Debian 13 "trixie" (and Ubuntu) |
           | \`${DSC_FILE}\` + \`${SRC_FILE}\` | Debian source package (vendored, builds offline) |
@@ -456,6 +470,10 @@ jobs:
           wget https://github.com/${GH_REPO}/releases/download/${VERSION}/tpm2-verifier-linux-amd64
           sha256sum -c --ignore-missing <(wget -qO- https://github.com/${GH_REPO}/releases/download/${VERSION}/checksums.txt)
           sudo install -m755 tpm2-verifier-linux-amd64 /usr/local/bin/tpm2-verifier
+          # The vendor data: tpm2-verifier uses ./vendors, or the directory given with -store.
+          wget https://github.com/${GH_REPO}/releases/download/${VERSION}/tpm2-verifier-vendors-${VERSION}.tar.gz
+          tar -xzf tpm2-verifier-vendors-${VERSION}.tar.gz
+          tpm2-verifier store verify
           \`\`\`
 
           #### Arch Linux
@@ -474,8 +492,11 @@ jobs:
           \`\`\`bash
           go install github.com/${GH_REPO}/cmd/tpm2-verifier@${VERSION}
           \`\`\`
+          plus the vendor data as for the binary.
 
-          Then: \`sudo tpm2-verifier info -prove\`
+          Then, in the directory that contains \`vendors/\`: \`sudo tpm2-verifier info -prove\`.
+          The packages install the vendor data to \`/usr/share/tpm2-verifier/vendors\`:
+          \`sudo tpm2-verifier info -prove -store /usr/share/tpm2-verifier/vendors\`
           EOF
 
           FLAGS=()

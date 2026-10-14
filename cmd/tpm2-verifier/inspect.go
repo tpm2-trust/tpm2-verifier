@@ -21,7 +21,7 @@ func runInspect(args []string, stdout io.Writer) error {
 		"Shows certificates and CRLs. A file may contain several concatenated DER or PEM\n"+
 			"certificates. Certificates found in the vendor store are marked.")
 	asJSON := fs.Bool("json", false, "JSON output")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func runInspect(args []string, stdout io.Writer) error {
 		fs.Usage()
 		return exitError(2)
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}

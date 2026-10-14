@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/tpm2-trust/tpm2-verifier/store"
 )
 
 func runStore(args []string, stdout io.Writer) error {
@@ -22,6 +20,10 @@ func runStore(args []string, stdout io.Writer) error {
 		return storeShow(args[1:], stdout)
 	case "export":
 		return storeExport(args[1:], stdout)
+	case "verify":
+		return storeVerify(args[1:], stdout)
+	case "manifest":
+		return storeManifest(args[1:], stdout)
 	case "-h", "--help", "help":
 		storeUsage()
 		return nil
@@ -30,27 +32,30 @@ func runStore(args []string, stdout io.Writer) error {
 }
 
 func storeUsage() error {
-	dir, _ := store.OverlayDir()
 	fmt.Fprintf(os.Stderr, `Usage: tpm2-verifier store <subcommand> [flags]
 
 Subcommands:
   list                 list vendors
   show <vendor>        show a vendor's metadata, certificates and notes
   export [vendor...]   write the store certificates to files (for openssl)
+  verify               check the vendor data against its signed MANIFEST
+  manifest             maintainers: update the MANIFEST after changes
 
-The embedded store can be extended with an overlay directory using the same
-layout (<vendor>/vendor.yaml, roots/, intermediates/): %s
-`, dir)
+The vendor data is the directory vendors/ in the working directory, or the
+directory given with -store. Its MANIFEST lists the SHA-256 of every file and
+must be signed (MANIFEST.sig) by a key built into tpm2-verifier; -allow-unsigned
+accepts data without such a signature.
+`)
 	return exitError(2)
 }
 
 func storeList(args []string, stdout io.Writer) error {
 	fs := newFlagSet("store list", "", "Lists the vendors of the store.")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	if _, err := parseInterleaved(fs, args); err != nil {
 		return err
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}
@@ -63,7 +68,7 @@ func storeList(args []string, stdout io.Writer) error {
 
 func storeShow(args []string, stdout io.Writer) error {
 	fs := newFlagSet("store show", "<vendor>", "Shows one vendor.")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	readme := fs.Bool("readme", false, "also print the vendor README")
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
@@ -73,7 +78,7 @@ func storeShow(args []string, stdout io.Writer) error {
 		fs.Usage()
 		return exitError(2)
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}
@@ -101,9 +106,6 @@ func storeShow(args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "    sha256:    %s\n", e.Cert.Fingerprint)
 		fmt.Fprintf(stdout, "    valid:     %s .. %s\n", e.Cert.NotBefore.Format("2006-01-02"), e.Cert.NotAfter.Format("2006-01-02"))
 		fmt.Fprintf(stdout, "    source:    %s (retrieved %s)\n", e.Source, e.Retrieved)
-		if e.Origin != "embedded" {
-			fmt.Fprintf(stdout, "    origin:    %s\n", e.Origin)
-		}
 	}
 	if *readme && v.Readme != "" {
 		fmt.Fprintf(stdout, "\n%s", v.Readme)
@@ -115,14 +117,14 @@ func storeExport(args []string, stdout io.Writer) error {
 	fs := newFlagSet("store export", "[vendor...]",
 		"Writes the store certificates to <dir>/<vendor>/{roots,intermediates}/,\n"+
 			"e.g. to use them with openssl verify. Without arguments all vendors are exported.")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	outDir := fs.String("o", "vendors-export", "output directory")
 	withPEM := fs.Bool("pem", false, "also write PEM files")
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}

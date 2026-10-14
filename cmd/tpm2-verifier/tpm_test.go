@@ -36,7 +36,7 @@ func provisioned(t *testing.T, f *fixture) string {
 func TestInfoFromSwtpm(t *testing.T) {
 	f := newFixture(t, false)
 	spec := provisioned(t, f)
-	code, stdout, stderr := runCLI("info", "-tpm", spec, "-store", f.store, "-no-fetch")
+	code, stdout, stderr := runCLI("info", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch")
 	if code != 0 {
 		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
 	}
@@ -56,7 +56,7 @@ func TestInfoFromSwtpm(t *testing.T) {
 func TestVerifyFromSwtpm(t *testing.T) {
 	f := newFixture(t, true) // PTT CA revoked on the indirect CRL
 	spec := provisioned(t, f)
-	args := []string{"verify", "-tpm", spec, "-store", f.store, "-no-fetch"}
+	args := []string{"verify", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch"}
 	for _, c := range f.crls {
 		args = append(args, "-crl", c)
 	}
@@ -74,7 +74,7 @@ func TestExportFromSwtpm(t *testing.T) {
 	y, _ := os.ReadFile(filepath.Join(f.store, "synthetic", "vendor.yaml"))
 	os.WriteFile(filepath.Join(f.store, "synthetic", "vendor.yaml"), []byte(strings.Replace(string(y), "[SYN]", "[IBM]", 1)), 0o644)
 
-	code, stdout, stderr := runCLI("export", "-tpm", spec, "-store", f.store, "-o", out)
+	code, stdout, stderr := runCLI("export", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-o", out)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
 	}
@@ -101,7 +101,7 @@ func TestDebugBundleReplay(t *testing.T) {
 	f := newFixture(t, false)
 	spec := provisioned(t, f)
 	out := filepath.Join(f.dir, "debug.tar.gz")
-	code, stdout, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", out)
+	code, stdout, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", out)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
 	}
@@ -113,19 +113,19 @@ func TestDebugBundleReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"analysis/summary.txt", "analysis/report.json", "analysis/chains/0x01C00002/6-store.der"} {
+	for _, name := range []string{"analysis/summary.txt", "analysis/vendor-data.txt", "analysis/report.json", "analysis/chains/0x01C00002/6-store.der"} {
 		if _, ok := b.Extra[name]; !ok {
 			t.Errorf("bundle lacks %s", name)
 		}
 	}
 
 	// The replay shows the same as the live TPM.
-	_, live, _ := runCLI("info", "-v", "-tpm", spec, "-store", f.store, "-no-fetch")
-	code, replay, stderr := runCLI("info", "-v", "-tpm", "bundle:"+out, "-store", f.store, "-no-fetch")
+	_, live, _ := runCLI("info", "-v", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch")
+	code, replay, stderr := runCLI("info", "-v", "-tpm", "bundle:"+out, "-store", f.store, "-allow-unsigned", "-no-fetch")
 	if code != 0 || live != replay {
 		t.Errorf("replay differs (exit %d, %s)\nlive:\n%s\nreplay:\n%s", code, stderr, live, replay)
 	}
-	if code, _, stderr := runCLI("export", "-tpm", "bundle:"+out, "-o", filepath.Join(f.dir, "exp")); code != 0 {
+	if code, _, stderr := runCLI("export", "-tpm", "bundle:"+out, "-store", f.store, "-allow-unsigned", "-o", filepath.Join(f.dir, "exp")); code != 0 {
 		t.Errorf("export from bundle: exit %d %s", code, stderr)
 	}
 	if code, _, _ := runCLI("debug", "-tpm", "bundle:"+out); code != 2 {
@@ -137,11 +137,11 @@ func TestDebugAnon(t *testing.T) {
 	f := newFixture(t, false)
 	spec := provisioned(t, f)
 	out := filepath.Join(f.dir, "anon")
-	code, stdout, stderr := runCLI("debug-anon", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", out)
+	code, stdout, stderr := runCLI("debug-anon", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", out)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
 	}
-	for _, want := range []string{"EK:   0x01C00002 TRUSTED", "Included in full (public):", "store synthetic/", "CN=CSME MCC ROM CA  sha256 ", "-include <sha256>", "tpm2-verifier info -store "} {
+	for _, want := range []string{"EK:   0x01C00002 TRUSTED", "Included in full (public):", "store synthetic/", "CN=CSME MCC ROM CA  sha256 ", "-include <sha256>", "tpm2-verifier info -allow-unsigned -store "} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("missing %q in\n%s", want, stdout)
 		}
@@ -167,11 +167,11 @@ func TestDebugAnon(t *testing.T) {
 
 	// A full debug bundle can be converted, and an archive written.
 	bundlePath := filepath.Join(f.dir, "debug.tar.gz")
-	if code, _, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", bundlePath); code != 0 {
+	if code, _, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", bundlePath); code != 0 {
 		t.Fatal(stderr)
 	}
 	archive := filepath.Join(f.dir, "anon.tar.gz")
-	if code, _, stderr := runCLI("debug-anon", "-tpm", "bundle:"+bundlePath, "-store", f.store, "-no-fetch", "-o", archive); code != 0 {
+	if code, _, stderr := runCLI("debug-anon", "-tpm", "bundle:"+bundlePath, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", archive); code != 0 {
 		t.Fatal(stderr)
 	}
 	if fi, err := os.Stat(archive); err != nil || fi.Size() == 0 {
@@ -185,18 +185,18 @@ func TestVendorImport(t *testing.T) {
 	f := newFixture(t, false)
 	spec := provisioned(t, f)
 	sub := filepath.Join(f.dir, "anon.tar.gz")
-	if code, _, stderr := runCLI("debug-anon", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", sub); code != 0 {
+	if code, _, stderr := runCLI("debug-anon", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", sub); code != 0 {
 		t.Fatal(stderr)
 	}
 	vendors := filepath.Join(f.dir, "vendors")
 	os.MkdirAll(vendors, 0o755)
 
-	code, stdout, stderr := runCLI("vendor", "review", "-vendors", vendors, "-no-fetch", sub)
+	code, stdout, stderr := runCLI("vendor", "review", "-store", vendors, "-no-fetch", sub)
 	if code != 0 || !strings.Contains(stdout, "Vendor:     ibm, IBM (NEW)") || !strings.Contains(stdout, "pending: not published") ||
 		!strings.Contains(stdout, "ready to import (0 certificates, 3 pending approval)") {
 		t.Fatalf("review exit %d\n%s%s", code, stdout, stderr)
 	}
-	args := []string{"vendor", "import", "-vendors", vendors, "-no-fetch"}
+	args := []string{"vendor", "import", "-store", vendors, "-no-fetch"}
 	for _, c := range []*x509.Certificate{f.pki.Root.Cert, f.pki.Int1.Cert, f.pki.Int2.Cert} {
 		sum := sha256.Sum256(c.Raw)
 		args = append(args, "-accept", hex.EncodeToString(sum[:]))
@@ -206,20 +206,20 @@ func TestVendorImport(t *testing.T) {
 		t.Fatalf("import exit %d\n%s%s", code, stdout, stderr)
 	}
 	// The imported vendor directory alone makes the TPM trusted.
-	code, stdout, _ = runCLI("info", "-tpm", spec, "-store", vendors, "-no-fetch")
+	code, stdout, _ = runCLI("info", "-tpm", spec, "-store", vendors, "-allow-unsigned", "-no-fetch")
 	if code != 0 || !strings.Contains(stdout, "TRUSTED (vendor ibm)") {
 		t.Errorf("info with imported vendor: exit %d\n%s", code, stdout)
 	}
 	// Again: nothing to do.
-	if _, stdout, _ := runCLI("vendor", "review", "-vendors", vendors, "-no-fetch", sub); !strings.Contains(stdout, "nothing to import") {
+	if _, stdout, _ := runCLI("vendor", "review", "-store", vendors, "-no-fetch", sub); !strings.Contains(stdout, "nothing to import") {
 		t.Errorf("second review:\n%s", stdout)
 	}
 	// Public intake refuses full bundles.
 	full := filepath.Join(f.dir, "debug.tar.gz")
-	if code, _, stderr := runCLI("debug", "-tpm", spec, "-no-fetch", "-o", full); code != 0 {
+	if code, _, stderr := runCLI("debug", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", full); code != 0 {
 		t.Fatal(stderr)
 	}
-	if code, _, stderr := runCLI("vendor", "review", "-anon-only", "-vendors", vendors, "-no-fetch", full); code != 2 || !strings.Contains(stderr, "full debug bundle") {
+	if code, _, stderr := runCLI("vendor", "review", "-anon-only", "-store", vendors, "-no-fetch", full); code != 2 || !strings.Contains(stderr, "full debug bundle") {
 		t.Errorf("-anon-only: exit %d %s", code, stderr)
 	}
 }
@@ -244,7 +244,7 @@ func TestProve(t *testing.T) {
 	swtpmtest.Define(t, tr, 0x01C00100, swtpmtest.EKCertAttrs, 0, f.pki.DeviceChain())
 	tp.Close()
 
-	code, stdout, stderr := runCLI("info", "-prove", "-tpm", spec, "-store", f.store, "-no-fetch")
+	code, stdout, stderr := runCLI("info", "-prove", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch")
 	if code != 1 {
 		t.Errorf("exit %d (one EK is not proven)\n%s", code, stderr)
 	}
@@ -258,22 +258,22 @@ func TestProve(t *testing.T) {
 			t.Errorf("missing %q in\n%s", want, stdout)
 		}
 	}
-	code, stdout, _ = runCLI("verify", "-prove", "-json", "-tpm", spec, "-store", f.store, "-no-fetch")
+	code, stdout, _ = runCLI("verify", "-prove", "-json", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch")
 	if code != 1 || !strings.Contains(stdout, `"status": "proven"`) || !strings.Contains(stdout, `"status": "key-mismatch"`) {
 		t.Errorf("verify -prove -json: exit %d\n%s", code, stdout)
 	}
 
 	// Recorded bundles cannot prove anything.
 	b := filepath.Join(f.dir, "debug.tar.gz")
-	if code, _, stderr := runCLI("debug", "-prove", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", b); code != 0 {
+	if code, _, stderr := runCLI("debug", "-prove", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", b); code != 0 {
 		t.Fatal(stderr)
 	}
-	if _, stdout, _ := runCLI("info", "-prove", "-tpm", "bundle:"+b, "-store", f.store, "-no-fetch"); !strings.Contains(stdout, "Possession: UNSUPPORTED") {
+	if _, stdout, _ := runCLI("info", "-prove", "-tpm", "bundle:"+b, "-store", f.store, "-allow-unsigned", "-no-fetch"); !strings.Contains(stdout, "Possession: UNSUPPORTED") {
 		t.Errorf("bundle replay:\n%s", stdout)
 	}
 	// debug-anon records the result (status and template only).
 	anon := filepath.Join(f.dir, "anon")
-	if code, stdout, stderr := runCLI("debug-anon", "-prove", "-tpm", spec, "-store", f.store, "-no-fetch", "-o", anon); code != 0 || !strings.Contains(stdout, "possession PROVEN (TCG template L-1 (RSA 2048))") {
+	if code, stdout, stderr := runCLI("debug-anon", "-prove", "-tpm", spec, "-store", f.store, "-allow-unsigned", "-no-fetch", "-o", anon); code != 0 || !strings.Contains(stdout, "possession PROVEN (TCG template L-1 (RSA 2048))") {
 		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
 	}
 	info, _ := os.ReadFile(filepath.Join(anon, "info.json"))

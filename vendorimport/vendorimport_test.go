@@ -15,6 +15,7 @@ import (
 	"github.com/tpm2-trust/tpm2-verifier/certparse"
 	"github.com/tpm2-trust/tpm2-verifier/fetch"
 	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
+	"github.com/tpm2-trust/tpm2-verifier/manifest"
 	"github.com/tpm2-trust/tpm2-verifier/store"
 	"github.com/tpm2-trust/tpm2-verifier/tpm"
 	"github.com/tpm2-trust/tpm2-verifier/vendorimport"
@@ -144,14 +145,21 @@ func TestNewVendor(t *testing.T) {
 	if len(p.Accepted()) != 3 {
 		t.Fatalf("accepted %d, pending %v", len(p.Accepted()), pending(p))
 	}
+	os.WriteFile(filepath.Join(f.dir, manifest.SigFile), []byte("signature of the old data"), 0o644)
 	changed, err := p.Apply(f.opts())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"syn/README.md", "syn/intermediates/on-die-csme-p-mcc-00001881-issuing-ca.der", "syn/intermediates/ondie-ca-csme-intermediate-ca.der",
+	want := []string{"MANIFEST", "MANIFEST.sig", "syn/README.md", "syn/intermediates/on-die-csme-p-mcc-00001881-issuing-ca.der", "syn/intermediates/ondie-ca-csme-intermediate-ca.der",
 		"syn/observations.yaml", "syn/roots/ondie-ca-root-cert-signing.der", "syn/vendor.yaml"}
 	if strings.Join(changed, " ") != strings.Join(want, " ") {
 		t.Errorf("changed %v", changed)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, manifest.SigFile)); err == nil {
+		t.Error("stale MANIFEST.sig kept")
+	}
+	if r, err := manifest.Verify(f.dir, nil); err != nil || r.Status != manifest.StatusUnsigned {
+		t.Errorf("manifest after import: %+v %v", r, err)
 	}
 	y, _ := os.ReadFile(filepath.Join(f.dir, "syn", "vendor.yaml"))
 	for _, w := range []string{"manufacturer_ids: [SYN]", "chain_nv_indices: [0x01C00100]", "domains: [aia.example]", "role: root"} {

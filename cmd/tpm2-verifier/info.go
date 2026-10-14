@@ -101,7 +101,7 @@ func runInfo(args []string, stdout io.Writer) error {
 	spec := addTPMFlag(fs)
 	asJSON := fs.Bool("json", false, "JSON output")
 	verbose := fs.Bool("v", false, "show fingerprints, quirks and revocation details")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	revMode := fs.String("revocation", "best-effort", "revocation mode: off, best-effort, require")
 	crlf := addCRLFlags(fs)
 	pf := addProveFlags(fs)
@@ -111,7 +111,7 @@ func runInfo(args []string, stdout io.Writer) error {
 		fs.Usage()
 		return exitError(2)
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}
@@ -277,14 +277,14 @@ func runExport(args []string, stdout io.Writer) error {
 	spec := addTPMFlag(fs)
 	outDir := fs.String("o", "tpm-export", "output directory")
 	withPEM := fs.Bool("pem", false, "also write PEM files")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	if pos, err := parseInterleaved(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
 		fs.Usage()
 		return exitError(2)
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}

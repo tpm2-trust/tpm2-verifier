@@ -34,7 +34,7 @@ func runVerify(args []string, stdout io.Writer) error {
 	at := fs.String("time", "", "validate at this time (RFC 3339) instead of now")
 	asJSON := fs.Bool("json", false, "JSON output")
 	verbose := fs.Bool("v", false, "show fingerprints, quirks and revocation details")
-	overlay := fs.String("store", "", "additional vendor store directory")
+	sf := addStoreFlags(fs)
 	crlf := addCRLFlags(fs)
 	pf := addProveFlags(fs)
 	pos, err := parseInterleaved(fs, args)
@@ -44,7 +44,7 @@ func runVerify(args []string, stdout io.Writer) error {
 	if *pf.prove && len(pos) > 0 {
 		return fmt.Errorf("-prove needs the TPM; it cannot be used with certificate files")
 	}
-	st, err := loadStore(*overlay)
+	st, err := sf.load()
 	if err != nil {
 		return err
 	}
@@ -232,19 +232,6 @@ func short(fp string) string {
 		return fp[:16] + "..."
 	}
 	return fp
-}
-
-func loadStore(overlay string) (*store.Store, error) {
-	st, err := store.Default()
-	if err != nil {
-		return nil, err
-	}
-	if overlay != "" {
-		if err := st.AddFS(os.DirFS(overlay), overlay); err != nil {
-			return nil, err
-		}
-	}
-	return st, nil
 }
 
 func parseOID(s string) (asn1.ObjectIdentifier, error) {

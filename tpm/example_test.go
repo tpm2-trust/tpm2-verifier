@@ -26,7 +26,8 @@ func Example() {
 	}
 	fmt.Println(scan.Info.Manufacturer)
 
-	st, err := store.Default()
+	// The vendor data directory, checked against its signed MANIFEST.
+	st, _, err := store.Open("vendors", store.OpenOptions{})
 	if err != nil {
 		panic(err)
 	}

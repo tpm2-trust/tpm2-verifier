@@ -14,8 +14,9 @@ import (
 	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
 )
 
-// fixture writes a synthetic Intel-like hierarchy to disk: an overlay store
-// with the static CAs, the EK, the NV chain blob and the CRLs.
+// fixture writes a synthetic Intel-like hierarchy to disk: a vendor data
+// directory with the static CAs (and a copy of the real intel vendor), the
+// EK, the NV chain blob and the CRLs.
 type fixture struct {
 	dir, store, ek, chain string
 	crls                  []string
@@ -42,6 +43,9 @@ func newFixture(t *testing.T, revoked bool) *fixture {
 		yaml += fmt.Sprintf("  - file: %s\n    role: %s\n    source: test\n    sha256: %s\n", name, role, hex.EncodeToString(sum[:]))
 	}
 	write(t, filepath.Join(vdir, "vendor.yaml"), []byte(yaml))
+	if err := os.CopyFS(filepath.Join(f.store, "intel"), os.DirFS("../../vendors/intel")); err != nil {
+		t.Fatal(err)
+	}
 
 	f.ek = write(t, filepath.Join(f.dir, "ek.der"), pki.EK.Raw)
 	f.chain = write(t, filepath.Join(f.dir, "chain.der"), pki.DeviceChain())
@@ -68,7 +72,7 @@ func write(t *testing.T, path string, data []byte) string {
 }
 
 func (f *fixture) verifyArgs(extra ...string) []string {
-	args := []string{"verify", "-no-fetch", "-store", f.store, "-time", f.pki.Now.Format("2006-01-02T15:04:05Z")}
+	args := []string{"verify", "-no-fetch", "-store", f.store, "-allow-unsigned", "-time", f.pki.Now.Format("2006-01-02T15:04:05Z")}
 	for _, c := range f.crls {
 		args = append(args, "-crl", c)
 	}
@@ -111,8 +115,8 @@ func TestVerifyTrusted(t *testing.T) {
 	if !strings.Contains(stdout, "TRUSTED (vendor synthetic)") || strings.Count(stdout, "depth=") != 7 {
 		t.Errorf("unexpected output:\n%s", stdout)
 	}
-	// The EK claims INTC but the synthetic store only knows SYN; with the
-	// embedded store loaded too, INTC resolves to intel and the mismatch is hinted.
+	// The EK claims INTC but chains to the synthetic vendor (SYN); INTC
+	// resolves to intel and the mismatch is hinted.
 	if !strings.Contains(stdout, "EK claims manufacturer INTC (intel) but chains to vendor synthetic") {
 		t.Errorf("missing manufacturer mismatch hint:\n%s", stdout)
 	}
@@ -141,7 +145,7 @@ func TestVerifyRevokedJSON(t *testing.T) {
 
 func TestVerifyIncomplete(t *testing.T) {
 	f := newFixture(t, false)
-	code, stdout, _ := runCLI("verify", "-no-fetch", "-store", f.store, f.ek)
+	code, stdout, _ := runCLI("verify", "-no-fetch", "-store", f.store, "-allow-unsigned", f.ek)
 	if code != 1 || !strings.Contains(stdout, "INCOMPLETE") {
 		t.Fatalf("exit %d\n%s", code, stdout)
 	}
@@ -149,7 +153,7 @@ func TestVerifyIncomplete(t *testing.T) {
 
 func TestInspect(t *testing.T) {
 	f := newFixture(t, false)
-	code, stdout, stderr := runCLI("inspect", f.ek, f.chain, f.crls[0])
+	code, stdout, stderr := runCLI("inspect", "-store", f.store, "-allow-unsigned", f.ek, f.chain, f.crls[0])
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}
@@ -162,7 +166,7 @@ func TestInspect(t *testing.T) {
 
 func TestStoreExportAndUsage(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "x")
-	code, stdout, _ := runCLI("store", "export", "-o", out, "intel")
+	code, stdout, _ := runCLI("store", "export", "-store", "../../vendors", "-allow-unsigned", "-o", out, "intel")
 	if code != 0 || !strings.Contains(stdout, filepath.Join("intel", "roots", "ondie-ca-root.der")) {
 		t.Fatalf("exit %d: %s", code, stdout)
 	}

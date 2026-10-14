@@ -24,7 +24,7 @@ func TestBundleFixtures(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("no fixture bundles")
 	}
-	st, err := store.Embedded()
+	st, err := store.LoadDir("../../vendors")
 	if err != nil {
 		t.Fatal(err)
 	}

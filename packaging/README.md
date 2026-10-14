@@ -9,8 +9,10 @@
 | `build-packages.sh` | Builds the Arch and Debian packages of HEAD locally into `build/packages/` |
 
 Both packages contain one statically linked, cgo-free binary,
-`/usr/bin/tpm2-verifier`, plus README and licence. The vendor store is
-embedded in the binary.
+`/usr/bin/tpm2-verifier`, the vendor data in
+`/usr/share/tpm2-verifier/vendors` (use it with `-store`), README and licence.
+A release needs vendor data signed by a key in `manifest/allowed_signers`
+(`tpm2-verifier store verify`); sign `vendors/MANIFEST` before tagging.
 
 ## Releases
 
@@ -18,7 +20,8 @@ Pushing a tag (`v0.1.0`, or `v0.2.0-rc1` for a prerelease) runs
 `.github/workflows/release.yml`:
 
 1. unit tests (once; the package builds skip theirs)
-2. release binaries: Linux amd64/arm64, Windows amd64, macOS amd64/arm64
+2. release binaries: Linux amd64/arm64, Windows amd64, macOS amd64/arm64;
+   `store verify` of `vendors/` (must be signed) and the vendor data archive
 3. Arch package in an `archlinux` container, checked with `namcap`
 4. Debian package in a `debian:trixie` container (vendored source, builds
    offline), checked with `lintian`

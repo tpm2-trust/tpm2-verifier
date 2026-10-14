@@ -32,7 +32,8 @@ the vendors/ directory of the repository.
 
   review   show what an import would change, and every warning (read-only)
   import   write the changes (certificates, vendor.yaml, observations.yaml,
-           README.md); undone if the result does not load
+           README.md, MANIFEST); undone if the result does not load. The
+           MANIFEST gets a new version and must be signed again
 
 Nothing in a submission is trusted. Each certificate is downloaded again from
 its source URL and only taken if the vendor serves identical bytes. Roots,
@@ -48,7 +49,7 @@ func vendorCommand(args []string, stdout io.Writer, write bool) error {
 		name = "vendor import"
 	}
 	fs := newFlagSet(name, "<submission>...", "See tpm2-verifier vendor -h.")
-	vendors := fs.String("vendors", "vendors", "vendor directory tree to update")
+	vendors := fs.String("store", defaultStore, "vendor data directory to update")
 	var accept, include stringList
 	fs.Var(&accept, "accept", "SHA-256 of a certificate approved by you (repeatable): a root\nafter comparing it with the vendor, or a CA flagged as pending")
 	fs.Var(&include, "include", "debug bundles: SHA-256 of a CA from the TPM to treat as public\n(a vendor CA in NV that is published nowhere; repeatable)")

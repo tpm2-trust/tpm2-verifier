@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tpm2-trust/tpm2-verifier/manifest"
 	"github.com/tpm2-trust/tpm2-verifier/store"
 	"github.com/tpm2-trust/tpm2-verifier/vendorinfo"
 )
@@ -119,6 +120,18 @@ func (p *Plan) Apply(opts Options) (changed []string, err error) {
 		return nil, err
 	}
 
+	// The manifest of the tree; the old signature no longer matches.
+	if m, changed, err := manifest.Update(opts.Vendors, "", now(opts)); err != nil {
+		return nil, fmt.Errorf("%s: %w", manifest.File, err)
+	} else if changed {
+		if err := tx.write(filepath.Join(opts.Vendors, manifest.File), m.Marshal()); err != nil {
+			return nil, err
+		}
+		if err := tx.remove(filepath.Join(opts.Vendors, manifest.SigFile)); err != nil {
+			return nil, err
+		}
+	}
+
 	// The result must load, and contain what was added.
 	st, err := store.LoadDir(opts.Vendors)
 	if err != nil {
@@ -146,10 +159,7 @@ type additions struct {
 
 func (p *Plan) yamlAdditions(opts Options) additions {
 	a := additions{ManufacturerIDs: p.ManufacturerIDs, ChainNVIndices: p.ChainNVIndices, Domains: p.Domains}
-	date := opts.Now
-	if date.IsZero() {
-		date = time.Now()
-	}
+	date := now(opts)
 	for _, c := range p.Accepted() {
 		role := "intermediate"
 		if c.Root {
@@ -163,6 +173,13 @@ func (p *Plan) yamlAdditions(opts Options) additions {
 			c.File, role, quote(c.Subject), quote(src), c.SHA256, date.UTC().Format(time.DateOnly)))
 	}
 	return a
+}
+
+func now(opts Options) time.Time {
+	if opts.Now.IsZero() {
+		return time.Now()
+	}
+	return opts.Now
 }
 
 func (p *Plan) newVendorYAML(opts Options) []byte {
@@ -226,6 +243,18 @@ func (t *transaction) write(p string, data []byte) error {
 	}
 	t.files = append(t.files, f)
 	return os.WriteFile(p, data, 0o644)
+}
+
+// remove deletes p, if it exists.
+func (t *transaction) remove(p string) error {
+	old, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	t.files = append(t.files, txFile{path: p, old: old, existed: true})
+	return os.Remove(p)
 }
 
 func (t *transaction) writeIfChanged(p string, data []byte) error {
