@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
 )
 
 func runSplit(args []string, stdout io.Writer) error {

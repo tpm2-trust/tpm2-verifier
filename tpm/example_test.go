@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrwiora/tpm2-verifier/fetch"
-	"github.com/mrwiora/tpm2-verifier/possession"
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/tpm"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/possession"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 // Verify every EK certificate of the local TPM, with CRLs fetched and cached,

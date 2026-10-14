@@ -18,11 +18,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
-	"github.com/mrwiora/tpm2-verifier/fetch"
-	"github.com/mrwiora/tpm2-verifier/internal/testpki"
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 var ctx = context.Background()

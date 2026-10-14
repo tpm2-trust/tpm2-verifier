@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/fetch"
-	"github.com/mrwiora/tpm2-verifier/internal/testpki"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
 )
 
 var ctx = context.Background()

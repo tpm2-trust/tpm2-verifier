@@ -8,9 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mrwiora/tpm2-verifier/possession"
-	"github.com/mrwiora/tpm2-verifier/tpm"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/possession"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 // proveFlags are the flags for the proof of EK possession.

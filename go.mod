@@ -1,4 +1,4 @@
-module github.com/mrwiora/tpm2-verifier
+module github.com/tpm2-trust/tpm2-verifier
 
 go 1.24.0
 

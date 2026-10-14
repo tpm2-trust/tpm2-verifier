@@ -21,8 +21,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
-	"github.com/mrwiora/tpm2-verifier/vendors"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/vendors"
 )
 
 // Role of a certificate in the store.

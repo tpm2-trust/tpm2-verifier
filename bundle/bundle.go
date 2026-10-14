@@ -25,7 +25,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
 )
 
 // FormatVersion is the bundle format written by this package.

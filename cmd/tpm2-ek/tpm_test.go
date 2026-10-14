@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrwiora/tpm2-verifier/bundle"
-	"github.com/mrwiora/tpm2-verifier/internal/swtpmtest"
-	"github.com/mrwiora/tpm2-verifier/possession"
-	"github.com/mrwiora/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/bundle"
+	"github.com/tpm2-trust/tpm2-verifier/internal/swtpmtest"
+	"github.com/tpm2-trust/tpm2-verifier/possession"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
 )
 
 // provisioned starts swtpm with the fixture's EK and device chain in NV.

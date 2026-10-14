@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
 )
 
 // crlFlags are the CRL fetching flags shared by verify and info.

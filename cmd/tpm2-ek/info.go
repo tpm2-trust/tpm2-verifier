@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrwiora/tpm2-verifier/bundle"
-	"github.com/mrwiora/tpm2-verifier/possession"
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/tpm"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/bundle"
+	"github.com/tpm2-trust/tpm2-verifier/possession"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 func addTPMFlag(fs *flag.FlagSet) *string {

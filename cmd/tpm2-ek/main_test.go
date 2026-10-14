@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrwiora/tpm2-verifier/internal/testpki"
+	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
 )
 
 // fixture writes a synthetic Intel-like hierarchy to disk: an overlay store

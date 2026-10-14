@@ -13,7 +13,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/mrwiora/tpm2-verifier/vendorinfo"
+	"github.com/tpm2-trust/tpm2-verifier/vendorinfo"
 )
 
 // ObservationsFile is the file in a vendor directory recording the TPMs seen

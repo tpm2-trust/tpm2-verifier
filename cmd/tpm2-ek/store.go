@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrwiora/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/store"
 )
 
 func runStore(args []string, stdout io.Writer) error {

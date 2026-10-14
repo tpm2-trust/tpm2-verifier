@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mrwiora/tpm2-verifier/bundle"
-	"github.com/mrwiora/tpm2-verifier/tpm"
-	"github.com/mrwiora/tpm2-verifier/vendorinfo"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/bundle"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/vendorinfo"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 func runDebug(args []string, stdout io.Writer) error {

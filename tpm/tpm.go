@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
 )
 
 // TPM_PT_FIXED properties used by Info.

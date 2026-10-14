@@ -13,8 +13,8 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 
-	"github.com/mrwiora/tpm2-verifier/internal/swtpmtest"
-	"github.com/mrwiora/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/internal/swtpmtest"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
 )
 
 // TestPolicyA recomputes TPM2_PolicySecret(TPM_RH_ENDORSEMENT).

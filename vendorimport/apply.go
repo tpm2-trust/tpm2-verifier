@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/vendorinfo"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/vendorinfo"
 )
 
 // assignFiles chooses a file name for every candidate that is unique in the

@@ -15,7 +15,7 @@ writes a debug bundle that can be replayed and analyzed anywhere.
 ## Install
 
 ```bash
-go install github.com/mrwiora/tpm2-verifier/cmd/tpm2-ek@latest
+go install github.com/tpm2-trust/tpm2-verifier/cmd/tpm2-ek@latest
 ```
 
 No cgo, no openssl needed. Linux first; it builds and runs on Windows too.
@@ -244,11 +244,11 @@ replayed by the tests and must still produce the status recorded in it.
 
 ```go
 import (
-	"github.com/mrwiora/tpm2-verifier/fetch"
-	"github.com/mrwiora/tpm2-verifier/possession"
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/tpm"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/possession"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 t, _ := tpm.Open("")                      // /dev/tpmrm0, TBS, or a TCTI spec
