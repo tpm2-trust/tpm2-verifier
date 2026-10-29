@@ -1,0 +1,31 @@
+Source: tpm2-verifier
+Section: utils
+Priority: optional
+Maintainer: Matthias R. Wiora <matthias@wiora.io>
+# Go >= the go line of go.mod: the build uses the go in PATH (from go.dev),
+# so Go is not a package dependency.
+Build-Depends:
+ debhelper-compat (= 13),
+Standards-Version: 4.7.0
+Homepage: https://github.com/tpm2-trust/tpm2-verifier
+Vcs-Browser: https://github.com/tpm2-trust/tpm2-verifier
+Vcs-Git: https://github.com/tpm2-trust/tpm2-verifier.git
+Rules-Requires-Root: no
+
+Package: tpm2-verifier
+Architecture: any
+Depends:
+ ${misc:Depends},
+Suggests: tpm2-tools, swtpm
+Description: verify TPM 2.0 endorsement key certificates and their vendor chain
+ tpm2-verifier reads the endorsement key (EK) certificates and the vendor
+ certificate chain from a TPM 2.0 (Linux /dev/tpmrm0, Windows TBS or swtpm)
+ and verifies them up to a curated, fingerprint-pinned store of TPM vendor
+ root CAs, including CRL revocation checks and AIA chain completion.
+ .
+ With -prove it also shows that the TPM holds the private key of each EK
+ certificate, by recreating the EK from its TCG template and decrypting a
+ challenge with TPM2_ActivateCredential.
+ .
+ Debug bundles and anonymized vendor information help adding TPM vendors that
+ are not in the store yet.

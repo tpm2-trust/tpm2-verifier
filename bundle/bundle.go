@@ -10,7 +10,7 @@
 //	tpm/info.json        decoded identity (manufacturer, firmware, ...)
 //	tpm/nv.json          every NV index: public area, read errors, data file
 //	tpm/nv/<index>.bin   content of every readable index of the TCG range
-//	analysis/...         files added by the creator (e.g. tpm2-ek debug)
+//	analysis/...         files added by the creator (e.g. tpm2-verifier debug)
 //
 // A bundle contains the EK certificate, which uniquely identifies the TPM.
 package bundle
@@ -25,7 +25,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
 )
 
 // FormatVersion is the bundle format written by this package.
@@ -81,7 +81,7 @@ type Bundle struct {
 
 // CollectOptions configure Collect.
 type CollectOptions struct {
-	// Tool is recorded in the manifest, e.g. "tpm2-ek v0.3.0".
+	// Tool is recorded in the manifest, e.g. "tpm2-verifier v0.3.0".
 	Tool string
 	// TPM is the spec used to open the TPM, recorded in the manifest.
 	TPM string
@@ -189,3 +189,8 @@ func (b *Bundle) Fake() *tpm.Fake {
 func (b *Bundle) sortNV() {
 	sort.Slice(b.NV, func(i, j int) bool { return b.NV[i].index < b.NV[j].index })
 }
+
+// PlatformInfo returns the kernel release and the platform information a
+// bundle records: TPM sysfs attributes and DMI vendor/model strings (no
+// serial numbers or UUIDs).
+func PlatformInfo() (kernel string, info map[string]string) { return platformInfo() }

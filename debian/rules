@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+
+export CGO_ENABLED = 0
+# A GOCACHE from the environment is kept (a build that runs again and again).
+export GOCACHE ?= $(CURDIR)/debian/.gocache
+# A vendored source tree builds offline; without one the modules are fetched.
+export GOFLAGS = $(if $(wildcard vendor/modules.txt),-mod=vendor,-mod=readonly) -trimpath
+# Fail if go.mod outgrows the installed Go rather than silently fetching a toolchain.
+export GOTOOLCHAIN = local
+
+VERSION := $(shell dpkg-parsechangelog -SVersion)
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+	go build -ldflags "-s -w -X main.version=$(VERSION)" -o tpm2-verifier ./cmd/tpm2-verifier
+	go version -m tpm2-verifier | grep -q 'CGO_ENABLED=0' || { echo "tpm2-verifier was built with cgo" >&2; exit 1; }
+
+# Tests that need swtpm skip themselves when it is not installed.
+override_dh_auto_test:
+	go test ./...
+
+override_dh_auto_install:
+
+override_dh_auto_clean:
+	rm -rf debian/.gocache tpm2-verifier
+
+# Static Go binary, already stripped by -ldflags: dwz cannot process it and
+# there are no shared libraries to derive dependencies from.
+override_dh_dwz:
+
+override_dh_shlibdeps:

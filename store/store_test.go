@@ -1,21 +1,34 @@
 package store_test
 
 import (
+	"errors"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 	"testing"
 	"testing/fstest"
 
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/vendors"
+	"github.com/tpm2-trust/tpm2-verifier/manifest"
+	"github.com/tpm2-trust/tpm2-verifier/store"
 )
 
-func TestEmbeddedStoreLoads(t *testing.T) {
-	s, err := store.Embedded()
+// repoVendors is the vendor data of the repository.
+const repoVendors = "../ekroots/vendors"
+
+var vendorsFS = os.DirFS(repoVendors)
+
+func repoStore(t *testing.T) *store.Store {
+	t.Helper()
+	s, err := store.LoadDir(repoVendors)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return s
+}
+
+func TestRepoStoreLoads(t *testing.T) {
+	s := repoStore(t)
 	intel := s.VendorForManufacturer("INTC")
 	if intel == nil || intel.ID != "intel" {
 		t.Fatalf("intel not found: %+v", intel)
@@ -34,13 +47,10 @@ func TestEmbeddedStoreLoads(t *testing.T) {
 	}
 }
 
-// Every certificate file in the embedded store must be listed in its vendor
-// manifest, so nothing is trusted without a recorded fingerprint and source.
+// Every certificate file in the store must be listed in its vendor.yaml, so
+// nothing is trusted without a recorded fingerprint and source.
 func TestNoUnlistedFiles(t *testing.T) {
-	s, err := store.Embedded()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := repoStore(t)
 	listed := map[string]bool{}
 	for _, v := range s.Vendors() {
 		for _, e := range v.Certificates {
@@ -50,7 +60,7 @@ func TestNoUnlistedFiles(t *testing.T) {
 			}
 		}
 	}
-	fs.WalkDir(vendors.FS, ".", func(p string, d fs.DirEntry, err error) error {
+	fs.WalkDir(vendorsFS, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +72,7 @@ func TestNoUnlistedFiles(t *testing.T) {
 }
 
 func TestFingerprintMismatchRejected(t *testing.T) {
-	root, err := fs.ReadFile(vendors.FS, "intel/roots/ondie-ca-root.der")
+	root, err := fs.ReadFile(vendorsFS, "intel/roots/ondie-ca-root.der")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,14 +87,14 @@ certificates:
 `)},
 		"bad/roots/r.der": {Data: root},
 	}
-	s, _ := store.Embedded()
+	s := repoStore(t)
 	if err := s.AddFS(fsys, "test"); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatalf("want sha256 mismatch, got %v", err)
 	}
 }
 
 func TestIntermediateAsRootRejected(t *testing.T) {
-	der, _ := fs.ReadFile(vendors.FS, "intel/intermediates/ondie-ca-csme-intermediate.der")
+	der, _ := fs.ReadFile(vendorsFS, "intel/intermediates/ondie-ca-csme-intermediate.der")
 	fsys := fstest.MapFS{
 		"x/vendor.yaml": {Data: []byte(`
 manufacturer_ids: [X]
@@ -110,7 +120,7 @@ accepted_critical_extensions: [1.2.840.113741.1.5.5.1.1]
 certificates: []
 `)},
 	}
-	s, _ := store.Embedded()
+	s := repoStore(t)
 	if err := s.AddFS(fsys, "overlay"); err != nil {
 		t.Fatal(err)
 	}
@@ -120,5 +130,24 @@ certificates: []
 	}
 	if len(s.Vendors()) != 1 {
 		t.Errorf("vendor duplicated")
+	}
+}
+
+// The repository's vendor data must match its MANIFEST (signed or not).
+func TestOpenRepoVendors(t *testing.T) {
+	_, res, err := store.Open(repoVendors, store.OpenOptions{Signers: []manifest.Signer{}})
+	var ue *store.UntrustedError
+	if !errors.As(err, &ue) || res.Status == manifest.StatusNoManifest {
+		t.Fatalf("want untrusted error with a manifest, got %v (%+v)", err, res)
+	}
+	s, res, err := store.Open(repoVendors, store.OpenOptions{AllowUnsigned: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Vendor("intel") == nil || res.Version == "" {
+		t.Errorf("%+v", res)
+	}
+	if _, _, err := store.Open("does-not-exist", store.OpenOptions{AllowUnsigned: true}); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing dir: %v", err)
 	}
 }

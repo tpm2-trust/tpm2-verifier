@@ -1,0 +1,8 @@
+# Keys trusted to sign the vendor data (vendors/MANIFEST.sig), compiled into
+# tpm2-verifier. Format of ssh-keygen ALLOWED SIGNERS, ssh-ed25519 keys only:
+#
+#   <principal> [namespaces="tpm2-verifier-vendors"] ssh-ed25519 <base64 key> [comment]
+#
+# Sign after every change of vendors/ (tpm2-verifier store manifest):
+#
+#   ssh-keygen -Y sign -f <key> -n tpm2-verifier-vendors vendors/MANIFEST

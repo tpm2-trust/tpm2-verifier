@@ -44,7 +44,16 @@ func IntelLike(t testing.TB) *IntelChain {
 		CRLDistributionPoint(URLIndirectCRL, &int1Name))
 	c.PTT = c.Kernel.IssueCA(t, pkix.Name{CommonName: "CSME MCC PTT 01SVN"},
 		CRLDistributionPoint(URLIndirectCRL, &int1Name))
-	c.EK = c.PTT.Issue(t, &x509.Certificate{
+	c.EK = c.IssueEK(t, nil)
+	return c
+}
+
+// IssueEK issues an EK certificate like Intel's from the PTT CA for the
+// public key pub (a fresh key if nil), e.g. the EK of a swtpm.
+func (c *IntelChain) IssueEK(t testing.TB, pub any) *x509.Certificate {
+	t.Helper()
+	int1Name := c.Int1.Cert.Subject
+	tmpl := &x509.Certificate{
 		NotBefore:             c.PTT.Cert.NotBefore,
 		NotAfter:              c.PTT.Cert.NotAfter,
 		KeyUsage:              x509.KeyUsageKeyAgreement,
@@ -54,8 +63,11 @@ func IntelLike(t testing.TB) *IntelChain {
 			TPMSubjectAltName("id:494E5443", "PTT", "id:00020008"),
 			CRLDistributionPoint(URLIndirectCRL, &int1Name),
 		},
-	})
-	return c
+	}
+	if pub == nil {
+		return c.PTT.Issue(t, tmpl)
+	}
+	return c.PTT.IssueFor(t, tmpl, pub)
 }
 
 // DeviceChain returns the per-device intermediates as stored in NV

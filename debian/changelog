@@ -1,0 +1,5 @@
+tpm2-verifier (0.1.0) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- Matthias R. Wiora <matthias@wiora.io>  Wed, 14 Oct 2026 12:00:00 +0000

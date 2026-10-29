@@ -1,0 +1,7 @@
+# tpm2-verifier vendor data. Check with: sha256sum -c MANIFEST
+# version: 2026.10.14
+2b7915d8a2db272b025eba236895eb993c0f55c9ebb69d0e07fbced280442968  intel/README.md
+d4a82dde06a12689ae22a50870003de03ac04205e921410c60eb0216fb15baff  intel/intermediates/mcc-00001881-issuing-ca.der
+5e3eee5748ac13e0b3d1227fcdc4751aa1402dde8031d21f63cb4ecf43f02440  intel/intermediates/ondie-ca-csme-intermediate.der
+beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24  intel/roots/ondie-ca-root.der
+cb480cf63c3b361a0eb8f3d07b2a945db76415f951b98cdb584a7d3bc56535fd  intel/vendor.yaml

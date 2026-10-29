@@ -28,7 +28,7 @@ const (
 const readme = `tpm2-verifier debug bundle
 ==========================
 
-This archive records what tpm2-ek reads from a TPM, so that its EK
+This archive records what tpm2-verifier reads from a TPM, so that its EK
 certificates can be analyzed on another machine:
 
   manifest.json        tool version, OS, kernel, TPM sysfs and DMI vendor/model
@@ -43,7 +43,7 @@ PRIVACY: the EK certificate uniquely identifies this TPM, and therefore this
 machine. Only share the bundle with people you trust with that information.
 No secrets, keys or measurements are included.
 
-Replay it with:  tpm2-ek info -tpm bundle:<file>
+Replay it with:  tpm2-verifier info -tpm bundle:<file>
 `
 
 // WriteTo writes the bundle as .tar.gz.

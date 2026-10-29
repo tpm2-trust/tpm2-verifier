@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
 )
 
 // Origin tells where a returned CRL came from.
@@ -299,7 +299,7 @@ func (f *Fetcher) download(ctx context.Context, rawURL string, meta *Meta) ([]by
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	req.Header.Set("User-Agent", "tpm2-verifier (+https://github.com/mrwiora/tpm2-verifier)")
+	req.Header.Set("User-Agent", "tpm2-verifier (+https://github.com/tpm2-trust/tpm2-verifier)")
 	if meta != nil {
 		if meta.ETag != "" {
 			req.Header.Set("If-None-Match", meta.ETag)

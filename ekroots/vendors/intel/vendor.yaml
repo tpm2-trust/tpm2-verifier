@@ -1,0 +1,32 @@
+id: intel
+name: Intel Corporation
+# TPM2_PT_MANUFACTURER as returned by TPM2_GetCapability.
+manufacturer_ids: [INTC]
+description: >-
+  Intel PTT (Platform Trust Technology), the firmware TPM running in the
+  Converged Security and Management Engine (CSME). EK certificates are issued
+  by the Intel OnDie CA.
+# NV indices holding the device specific part of the certificate chain as
+# concatenated DER certificates (TCG EK certificate chain range).
+chain_nv_indices: [0x01C00100]
+# Hosts the vendor publishes certificates on (tpm2-verifier vendor import).
+domains: [tsci.intel.com]
+certificates:
+  - file: roots/ondie-ca-root.der
+    role: root
+    subject: C=US, ST=CA, L=Santa Clara, O=Intel Corporation, OU=OnDie CA Root Cert Signing, CN=www.intel.com
+    source: https://tsci.intel.com/content/OnDieCA/certs/OnDie_CA_RootCA_Certificate.cer
+    sha256: beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24
+    retrieved: 2026-10-10
+  - file: intermediates/ondie-ca-csme-intermediate.der
+    role: intermediate
+    subject: OU=OnDie CA CSME Intermediate CA, CN=www.intel.com
+    source: https://tsci.intel.com/content/OnDieCA/certs/OnDie_CA_CSME_Intermediate.cer
+    sha256: 5e3eee5748ac13e0b3d1227fcdc4751aa1402dde8031d21f63cb4ecf43f02440
+    retrieved: 2026-10-10
+  - file: intermediates/mcc-00001881-issuing-ca.der
+    role: intermediate
+    subject: OU=On Die CSME P_MCC 00001881 Issuing CA, CN=www.intel.com
+    source: https://tsci.intel.com/content/OnDieCA/certs/MCC_00001881_OnDie_CA.cer
+    sha256: d4a82dde06a12689ae22a50870003de03ac04205e921410c60eb0216fb15baff
+    retrieved: 2026-10-10

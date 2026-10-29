@@ -18,11 +18,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
-	"github.com/mrwiora/tpm2-verifier/fetch"
-	"github.com/mrwiora/tpm2-verifier/internal/testpki"
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
 var ctx = context.Background()
@@ -101,7 +101,7 @@ func wantStatus(t *testing.T, r *verify.Report, want verify.Status) {
 }
 
 func TestRealIntelStaticChainWithCRLs(t *testing.T) {
-	s, err := store.Embedded()
+	s, err := store.LoadDir("../ekroots/vendors")
 	if err != nil {
 		t.Fatal(err)
 	}

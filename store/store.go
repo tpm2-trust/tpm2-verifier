@@ -1,9 +1,9 @@
 // Package store loads the vendor trust store: per TPM vendor metadata, trust
 // anchors (roots) and static intermediates.
 //
-// The curated store is embedded in the binary (package vendors). A local
-// overlay directory with the same layout can add vendors or certificates,
-// see Default.
+// The vendor data is a directory (vendors/ of the repository, shipped next
+// to the binary) protected by a signed manifest, see Open and package
+// manifest.
 package store
 
 import (
@@ -14,15 +14,14 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
-	"github.com/mrwiora/tpm2-verifier/vendors"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/manifest"
 )
 
 // Role of a certificate in the store.
@@ -45,7 +44,7 @@ type Entry struct {
 
 	Cert   *certparse.Certificate `yaml:"-"`
 	Vendor *Vendor                `yaml:"-"`
-	// Origin is "embedded" or the overlay directory the entry was loaded from.
+	// Origin is the directory the entry was loaded from.
 	Origin string `yaml:"-"`
 }
 
@@ -60,7 +59,10 @@ type Vendor struct {
 	// AcceptedCriticalExtensions are extension OIDs (dotted) that this
 	// vendor marks critical and that may be ignored during validation.
 	AcceptedCriticalExtensions []string `yaml:"accepted_critical_extensions,omitempty"`
-	Certificates               []*Entry `yaml:"certificates"`
+	// Domains are the hosts (and their subdomains) the vendor publishes its
+	// certificates on. tpm2-verifier vendor import flags certificates from others.
+	Domains      []string `yaml:"domains,omitempty"`
+	Certificates []*Entry `yaml:"certificates"`
 
 	// Readme is the content of README.md, if present.
 	Readme string `yaml:"-"`
@@ -128,42 +130,63 @@ type Store struct {
 	vendors []*Vendor
 }
 
-// Embedded loads the store compiled into the binary.
-func Embedded() (*Store, error) {
-	s := &Store{}
-	if err := s.AddFS(vendors.FS, "embedded"); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
+// New returns an empty store.
+func New() *Store { return &Store{} }
 
-// OverlayDir returns the default overlay directory,
-// $XDG_CONFIG_HOME/tpm2-verifier/vendors (%AppData% on Windows).
-func OverlayDir() (string, error) {
-	d, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(d, "tpm2-verifier", "vendors"), nil
-}
-
-// Default loads the embedded store and, if it exists, the overlay directory.
-func Default() (*Store, error) {
-	s, err := Embedded()
-	if err != nil {
-		return nil, err
-	}
-	dir, err := OverlayDir()
-	if err != nil {
-		return s, nil
-	}
-	if _, err := os.Stat(dir); err != nil {
-		return s, nil
-	}
+// LoadDir loads a vendor directory tree without checking its manifest. It
+// is meant for maintainer tools that edit the tree; use Open otherwise.
+func LoadDir(dir string) (*Store, error) {
+	s := New()
 	if err := s.AddFS(os.DirFS(dir), dir); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// OpenOptions control Open.
+type OpenOptions struct {
+	// AllowUnsigned accepts data without a signature by a trusted key
+	// (unsigned, signed by another key, or without manifest). A manifest
+	// that does not match the files is an error nevertheless.
+	AllowUnsigned bool
+	// Signers are the trusted keys; nil means manifest.TrustedSigners.
+	Signers []manifest.Signer
+}
+
+// Open verifies the vendor data in dir against its MANIFEST and signature
+// and loads it from the verified content.
+func Open(dir string, opts OpenOptions) (*Store, *manifest.Result, error) {
+	if fi, err := os.Stat(dir); err != nil {
+		return nil, nil, err
+	} else if !fi.IsDir() {
+		return nil, nil, fmt.Errorf("%s is not a directory", dir)
+	}
+	signers := opts.Signers
+	if signers == nil {
+		var err error
+		if signers, err = manifest.TrustedSigners(); err != nil {
+			return nil, nil, err
+		}
+	}
+	res, err := manifest.Verify(dir, signers)
+	if err != nil {
+		return nil, nil, fmt.Errorf("vendor data %s: %w", dir, err)
+	}
+	if !res.Trusted() && !opts.AllowUnsigned {
+		return nil, res, &UntrustedError{Result: res}
+	}
+	s := New()
+	if err := s.AddFS(res.FS, dir); err != nil {
+		return nil, res, err
+	}
+	return s, res, nil
+}
+
+// UntrustedError is returned by Open for data not signed by a trusted key.
+type UntrustedError struct{ Result *manifest.Result }
+
+func (e *UntrustedError) Error() string {
+	return fmt.Sprintf("vendor data %s is not signed by a trusted key (%s)", e.Result.Dir, e.Result.Describe())
 }
 
 // AddFS loads every <vendor>/vendor.yaml found in fsys. A vendor whose ID
@@ -282,6 +305,11 @@ func (s *Store) merge(v *Vendor) {
 	for _, n := range v.ChainNVIndices {
 		if !slices.Contains(cur.ChainNVIndices, n) {
 			cur.ChainNVIndices = append(cur.ChainNVIndices, n)
+		}
+	}
+	for _, d := range v.Domains {
+		if !slices.Contains(cur.Domains, d) {
+			cur.Domains = append(cur.Domains, d)
 		}
 	}
 	for _, o := range v.AcceptedCriticalExtensions {

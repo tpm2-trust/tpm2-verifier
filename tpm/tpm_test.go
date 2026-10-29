@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mrwiora/tpm2-verifier/internal/swtpmtest"
-	"github.com/mrwiora/tpm2-verifier/internal/testpki"
-	"github.com/mrwiora/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/internal/swtpmtest"
+	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
 )
 
 var ctx = context.Background()

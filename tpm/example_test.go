@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mrwiora/tpm2-verifier/fetch"
-	"github.com/mrwiora/tpm2-verifier/store"
-	"github.com/mrwiora/tpm2-verifier/tpm"
-	"github.com/mrwiora/tpm2-verifier/verify"
+	"github.com/tpm2-trust/tpm2-verifier/fetch"
+	"github.com/tpm2-trust/tpm2-verifier/possession"
+	"github.com/tpm2-trust/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/tpm"
+	"github.com/tpm2-trust/tpm2-verifier/verify"
 )
 
-// Verify every EK certificate of the local TPM, with CRLs fetched and cached.
+// Verify every EK certificate of the local TPM, with CRLs fetched and cached,
+// and prove that the TPM holds the EK.
 func Example() {
 	ctx := context.Background()
 	t, err := tpm.Open("") // /dev/tpmrm0, TBS, or a TCTI spec like "swtpm:host=localhost,port=2321"
@@ -24,7 +26,8 @@ func Example() {
 	}
 	fmt.Println(scan.Info.Manufacturer)
 
-	st, err := store.Default()
+	// The vendor data directory, checked against its signed MANIFEST.
+	st, _, err := store.Open("vendors", store.OpenOptions{})
 	if err != nil {
 		panic(err)
 	}
@@ -39,6 +42,12 @@ func Example() {
 		fmt.Println(tpm.HexIndex(ek.Index), rep.Status, rep.Vendor)
 		for _, l := range rep.Chain {
 			fmt.Println(" ", l.Subject, l.Source, l.Revocation.Status, l.Revocation.Source)
+		}
+		// Prove that this TPM holds the EK (pass the EK template and nonce
+		// index contents for the low range if the TPM has them).
+		if d, ok := t.Backend().(*tpm.Device); ok {
+			res := possession.Prove(d.Transport(), ek.Index, ek.Certificates[0].PublicKey, nil, nil, possession.Options{})
+			fmt.Println(" ", res.Status, res.Detail)
 		}
 	}
 }

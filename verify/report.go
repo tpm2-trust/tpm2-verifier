@@ -3,8 +3,8 @@ package verify
 import (
 	"time"
 
-	"github.com/mrwiora/tpm2-verifier/certparse"
-	"github.com/mrwiora/tpm2-verifier/store"
+	"github.com/tpm2-trust/tpm2-verifier/certparse"
+	"github.com/tpm2-trust/tpm2-verifier/store"
 )
 
 // Status is the overall verification result.
