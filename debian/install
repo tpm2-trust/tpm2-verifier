@@ -1,2 +1,2 @@
 tpm2-verifier  usr/bin
-vendors  usr/share/tpm2-verifier
+ekroots/vendors  usr/share/tpm2-verifier

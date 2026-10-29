@@ -266,6 +266,29 @@ replayed by the tests and must still produce the status recorded in it.
 
 ## Library
 
+### The EK roots, embedded: `ekroots`
+
+The curated vendor store, for every program that checks a TPM's EK
+certificate (tpm2-kira's core, and through it the Marify app, tpm2-kira and
+its vault): the vendor data of `ekroots/vendors/`, embedded at build time and
+checked at load against its `MANIFEST` and - once `manifest/allowed_signers`
+names a key - its signature `MANIFEST.sig`. Nothing is added at runtime.
+
+```go
+import "github.com/tpm2-trust/tpm2-verifier/ekroots"
+
+r := ekroots.Check(ekCertDER, intermediatesDER, time.Now()) // offline: no download, no CRL
+switch r.Status {
+case ekroots.Verified:      // the chain ends at a root of the TPM's vendor (r.Vendor)
+case ekroots.VendorUnknown: // the vendor is not in the store yet: not untrusted,
+                            // a risk to weigh (r.Detail says so)
+case ekroots.Failed:        // a known vendor's TPM whose chain does not verify
+}
+d, _ := ekroots.Data()      // version, files, signed by whom
+```
+
+### The rest
+
 ```go
 import (
 	"github.com/tpm2-trust/tpm2-verifier/fetch"
@@ -327,8 +350,11 @@ If a vendor uses negative serial numbers, programs using the library need
 
 ## Vendor data
 
+The vendor data lives in `ekroots/vendors/` (embedded by the `ekroots`
+package; the packages install it as `/usr/share/tpm2-verifier/vendors`):
+
 ```
-vendors/
+ekroots/vendors/
 ├── MANIFEST                        # SHA-256 of every file + version
 ├── MANIFEST.sig                    # ssh-keygen -Y sign signature of MANIFEST
 └── intel/
@@ -392,10 +418,10 @@ itself):
 
 ```bash
 tpm2-verifier store manifest                    # new MANIFEST and version; removes the stale signature
-ssh-keygen -Y sign -f ~/.ssh/<key> -n tpm2-verifier-vendors vendors/MANIFEST   # writes MANIFEST.sig
+ssh-keygen -Y sign -f ~/.ssh/<key> -n tpm2-verifier-vendors ekroots/vendors/MANIFEST   # writes MANIFEST.sig
 tpm2-verifier store verify                      # OK only if signed by a key in manifest/allowed_signers
 # independent of tpm2-verifier:
-ssh-keygen -Y verify -f manifest/allowed_signers -I <principal> -n tpm2-verifier-vendors -s vendors/MANIFEST.sig < vendors/MANIFEST
+ssh-keygen -Y verify -f manifest/allowed_signers -I <principal> -n tpm2-verifier-vendors -s ekroots/vendors/MANIFEST.sig < ekroots/vendors/MANIFEST
 ```
 
 The release workflow refuses to release vendor data that `store verify`
@@ -422,7 +448,7 @@ tpm2-verifier vendor import submissions/x.tar.gz        # write vendors/<id>/
 tpm2-verifier vendor import -accept <sha256> ...        # approve a root or flagged CA
 tpm2-verifier vendor import -fixture testdata/bundles debug.tar.gz   # keep a full bundle as test fixture (with consent)
 git diff vendors/
-ssh-keygen -Y sign -f ~/.ssh/<key> -n tpm2-verifier-vendors vendors/MANIFEST
+ssh-keygen -Y sign -f ~/.ssh/<key> -n tpm2-verifier-vendors ekroots/vendors/MANIFEST
 ```
 
 The import changes `vendors/<id>/`: certificate files in `roots/` and
@@ -560,7 +586,7 @@ fingerprint with the vendor store before trusting it:
 
 ```bash
 openssl x509 -inform der -in OnDie_CA_RootCA_Certificate.cer -noout -fingerprint -sha256
-grep -r sha256 vendors/*/vendor.yaml
+grep -r sha256 ekroots/vendors/*/vendor.yaml
 ```
 
 ### 7. CRLs
@@ -581,7 +607,7 @@ CAs use one). openssl needs `-extended_crl` for those.
 ### 8. Verify the chain
 
 ```bash
-tpm2-verifier store export -o certs intel     # or use the files in vendors/intel/
+tpm2-verifier store export -o certs intel     # or use the files in ekroots/vendors/intel/
 openssl verify -show_chain \
   -trusted certs/intel/roots/ondie-ca-root.der \
   -untrusted certs/intel/intermediates/ondie-ca-csme-intermediate.der \

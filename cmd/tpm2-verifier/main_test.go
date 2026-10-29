@@ -43,7 +43,7 @@ func newFixture(t *testing.T, revoked bool) *fixture {
 		yaml += fmt.Sprintf("  - file: %s\n    role: %s\n    source: test\n    sha256: %s\n", name, role, hex.EncodeToString(sum[:]))
 	}
 	write(t, filepath.Join(vdir, "vendor.yaml"), []byte(yaml))
-	if err := os.CopyFS(filepath.Join(f.store, "intel"), os.DirFS("../../vendors/intel")); err != nil {
+	if err := os.CopyFS(filepath.Join(f.store, "intel"), os.DirFS("../../ekroots/vendors/intel")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -166,7 +166,7 @@ func TestInspect(t *testing.T) {
 
 func TestStoreExportAndUsage(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "x")
-	code, stdout, _ := runCLI("store", "export", "-store", "../../vendors", "-allow-unsigned", "-o", out, "intel")
+	code, stdout, _ := runCLI("store", "export", "-store", "../../ekroots/vendors", "-allow-unsigned", "-o", out, "intel")
 	if code != 0 || !strings.Contains(stdout, filepath.Join("intel", "roots", "ondie-ca-root.der")) {
 		t.Fatalf("exit %d: %s", code, stdout)
 	}

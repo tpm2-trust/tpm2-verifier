@@ -24,7 +24,7 @@ func TestBundleFixtures(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("no fixture bundles")
 	}
-	st, err := store.LoadDir("../../vendors")
+	st, err := store.LoadDir("../../ekroots/vendors")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ package() {
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     # The vendor data, used with -store /usr/share/tpm2-verifier/vendors.
     install -d "$pkgdir/usr/share/$pkgname"
-    cp -r --no-preserve=ownership,mode vendors "$pkgdir/usr/share/$pkgname/"
+    cp -r --no-preserve=ownership,mode ekroots/vendors "$pkgdir/usr/share/$pkgname/"
 }
 
 # vim:set ts=4 sw=4 et:

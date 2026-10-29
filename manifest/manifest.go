@@ -106,17 +106,16 @@ func (m *Manifest) Marshal() []byte {
 // read returns every file of dir except the manifest and its signature,
 // keyed by slash separated path. Only regular files and directories are
 // allowed.
-func read(dir string) (map[string][]byte, error) {
+func read(dir string) (map[string][]byte, error) { return readFS(os.DirFS(dir)) }
+
+// readFS is read for a file system: a directory, or data embedded in a
+// binary.
+func readFS(fsys fs.FS) (map[string][]byte, error) {
 	files := map[string][]byte{}
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(dir, p)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
 		switch {
 		case d.IsDir():
 			return nil
@@ -127,7 +126,7 @@ func read(dir string) (map[string][]byte, error) {
 		case !validPath(rel):
 			return fmt.Errorf("%s: unsupported file name", rel)
 		}
-		data, err := os.ReadFile(p)
+		data, err := fs.ReadFile(fsys, rel)
 		files[rel] = data
 		return err
 	})
@@ -257,7 +256,14 @@ func (r *Result) Describe() string {
 // key not in signers, is reported in Result.Status; the caller decides
 // whether to accept it.
 func Verify(dir string, signers []Signer) (*Result, error) {
-	files, err := read(dir)
+	return VerifyFS(os.DirFS(dir), dir, signers)
+}
+
+// VerifyFS is Verify for a file system - vendor data embedded in a binary
+// (package ekroots) - named origin in the result and the errors.
+func VerifyFS(fsys fs.FS, origin string, signers []Signer) (*Result, error) {
+	dir := origin
+	files, err := readFS(fsys)
 	if err != nil {
 		return nil, err
 	}
@@ -266,9 +272,9 @@ func Verify(dir string, signers []Signer) (*Result, error) {
 		mfs[p] = &fstest.MapFile{Data: data, Mode: 0o444}
 	}
 	r := &Result{Dir: dir, Status: StatusNoManifest, Files: len(files), FS: mfs}
-	raw, err := os.ReadFile(filepath.Join(dir, File))
+	raw, err := fs.ReadFile(fsys, File)
 	if errors.Is(err, fs.ErrNotExist) {
-		if _, err := os.Stat(filepath.Join(dir, SigFile)); err == nil {
+		if _, err := fs.Stat(fsys, SigFile); err == nil {
 			return nil, fmt.Errorf("%s without %s", SigFile, File)
 		}
 		return r, nil
@@ -302,7 +308,7 @@ func Verify(dir string, signers []Signer) (*Result, error) {
 		return nil, fmt.Errorf("%s does not match the files (run tpm2-verifier store manifest after changes): %w", File, errors.Join(errs...))
 	}
 
-	sig, err := os.ReadFile(filepath.Join(dir, SigFile))
+	sig, err := fs.ReadFile(fsys, SigFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return r, nil
 	} else if err != nil {

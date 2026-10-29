@@ -28,7 +28,7 @@ func runVendor(args []string, stdout io.Writer) error {
 
 For maintainers: turns submissions (tpm2-verifier debug bundles or debug-anon
 output, archive or directory) into changes of a vendor directory tree such as
-the vendors/ directory of the repository.
+the ekroots/vendors/ directory of the repository (-store ekroots/vendors).
 
   review   show what an import would change, and every warning (read-only)
   import   write the changes (certificates, vendor.yaml, observations.yaml,

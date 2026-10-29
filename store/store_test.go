@@ -14,7 +14,7 @@ import (
 )
 
 // repoVendors is the vendor data of the repository.
-const repoVendors = "../vendors"
+const repoVendors = "../ekroots/vendors"
 
 var vendorsFS = os.DirFS(repoVendors)
 

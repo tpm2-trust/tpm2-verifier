@@ -23,9 +23,9 @@ func readFile(t *testing.T, path string) []byte {
 
 func intelStatic(t *testing.T) [][]byte {
 	return [][]byte{
-		readFile(t, "../vendors/intel/intermediates/mcc-00001881-issuing-ca.der"),
-		readFile(t, "../vendors/intel/intermediates/ondie-ca-csme-intermediate.der"),
-		readFile(t, "../vendors/intel/roots/ondie-ca-root.der"),
+		readFile(t, "../ekroots/vendors/intel/intermediates/mcc-00001881-issuing-ca.der"),
+		readFile(t, "../ekroots/vendors/intel/intermediates/ondie-ca-csme-intermediate.der"),
+		readFile(t, "../ekroots/vendors/intel/roots/ondie-ca-root.der"),
 	}
 }
 

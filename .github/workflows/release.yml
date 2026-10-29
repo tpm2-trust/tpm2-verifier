@@ -98,12 +98,12 @@ jobs:
             echo "ERROR: the binary does not report version ${VERSION}"; exit 1; }
 
       # Only vendor data signed by a key in manifest/allowed_signers is
-      # released: sign vendors/MANIFEST before tagging.
+      # released: sign ekroots/vendors/MANIFEST before tagging.
       - name: Verify and pack the vendor data
         run: |
           VERSION=${{ steps.get_version.outputs.VERSION }}
-          ./dist/tpm2-verifier-linux-amd64 store verify -store vendors
-          git archive --format=tar.gz -o "dist/tpm2-verifier-vendors-${VERSION}.tar.gz" HEAD vendors
+          ./dist/tpm2-verifier-linux-amd64 store verify -store ekroots/vendors
+          git archive --format=tar.gz -o "dist/tpm2-verifier-vendors-${VERSION}.tar.gz" HEAD:ekroots vendors
           tar -tzf "dist/tpm2-verifier-vendors-${VERSION}.tar.gz"
 
       - name: Create checksums
