@@ -52,7 +52,7 @@ func TestCheck(t *testing.T) {
 	now := ek.NotBefore.Add(time.Hour)
 	device := chainCerts(t, pki.DeviceChain())
 
-	if r := checkWith(storeOf(t, pki), ek.Raw, device, now); r.Status != Verified || r.Vendor != "Test Vendor" {
+	if r := CheckWith(storeOf(t, pki), ek.Raw, device, now); r.Status != Verified || r.Vendor != "Test Vendor" {
 		t.Fatalf("its own vendor's chain: %+v", r)
 	}
 	// The embedded store has Intel, not this synthetic root.

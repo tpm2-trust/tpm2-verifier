@@ -148,11 +148,12 @@ func Check(leaf []byte, intermediates [][]byte, now time.Time) Result {
 	if err != nil {
 		return Result{Status: Failed, Detail: err.Error()}
 	}
-	return checkWith(st, leaf, intermediates, now)
+	return CheckWith(st, leaf, intermediates, now)
 }
 
-// checkWith is Check against st.
-func checkWith(st *store.Store, leaf []byte, intermediates [][]byte, now time.Time) Result {
+// CheckWith is Check against st: a vendor directory tpm2-verifier's
+// command was given (store.Open), or a test's.
+func CheckWith(st *store.Store, leaf []byte, intermediates [][]byte, now time.Time) Result {
 	lc, err := certparse.Parse(leaf)
 	if err != nil {
 		return Result{Status: Failed, Detail: fmt.Sprintf("the EK certificate does not parse: %v", err)}
