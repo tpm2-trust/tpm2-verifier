@@ -2,7 +2,7 @@
 
 Thanks to the [Intel community thread](https://community.intel.com/t5/Mobile-and-Desktop-Processors/How-to-verify-an-Intel-PTT-endorsement-key-certificate/td-p/1603153/page/2)
 and [@fblaese](https://github.com/fblaese), from which the original
-[intel-ek-dechainer](https://github.com/mrwiora/intel-ek-dechainer) emerged.
+[intel-ek-dechainer](https://github.com/tpm2-trust/ek-dechainer) emerged.
 
 ## Hierarchy
 

@@ -5,7 +5,7 @@ endorsement key (EK) certificates and their vendor certificate chains, with a
 curated, fingerprint-pinned store of TPM vendor root CAs, shipped as a signed
 data directory next to the binary.
 
-It is the Go successor of [intel-ek-dechainer](https://github.com/mrwiora/intel-ek-dechainer)
+It is the Go successor of [intel-ek-dechainer](https://github.com/tpm2-trust/ek-dechainer)
 and does everything it did (split the per-device chain from NV, verify against
 the Intel OnDie CA) for any vendor. It also reads the TPM directly, completes
 chains via AIA, and checks every certificate of the chain against the CRLs
