@@ -181,7 +181,15 @@ func CheckWith(st *store.Store, leaf []byte, intermediates [][]byte, now time.Ti
 	if lc.TPM != nil {
 		manufacturer = lc.TPM.Manufacturer
 	}
+	// The vendor is the one the certificate names, or the one whose store
+	// certificate the chain reached: either way a known vendor's chain that
+	// does not verify fails.
 	vendor := st.VendorForManufacturer(manufacturer)
+	for _, l := range rep.Chain {
+		if vendor == nil && l.StoreEntry != nil {
+			vendor = l.StoreEntry.Vendor
+		}
+	}
 	if vendor == nil {
 		who := manufacturer
 		if who == "" {
