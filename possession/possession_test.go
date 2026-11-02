@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"strings"
 	"testing"
 
@@ -149,5 +150,67 @@ func TestEndorsementAuth(t *testing.T) {
 	}
 	if r := Prove(tr, 0x01C00002, key, nil, nil, Options{EndorsementAuth: []byte("secret")}); r.Status != StatusProven {
 		t.Errorf("with auth: %+v", r)
+	}
+}
+
+// A refused PolicySecret leaves no session in the TPM: on one connection, more
+// failures than the TPM has room for sessions end in the same refusal, and the
+// right authorization still activates (here, to refuse the empty credential).
+func TestRefusalsLeaveNoSession(t *testing.T) {
+	tr := swtpm(t)
+	if _, err := (tpm2.HierarchyChangeAuth{
+		AuthHandle: tpm2.AuthHandle{Handle: tpm2.TPMRHEndorsement, Auth: tpm2.PasswordAuth(nil)},
+		NewAuth:    tpm2.TPM2BAuth{Buffer: []byte("secret")},
+	}).Execute(tr); err != nil {
+		t.Fatal(err)
+	}
+	right := &tpmOps{t: tr, auth: []byte("secret")}
+	tmpl, _, err := Template(0x01C00002, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ek, pub, ekName, err := right.createEK(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer right.flush(ek)
+	obj, objName, err := right.createObject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer right.flush(obj)
+
+	sessions := func() int {
+		t.Helper()
+		got, err := tpm2.GetCapability{
+			Capability:    tpm2.TPMCapHandles,
+			Property:      uint32(tpm2.TPMHTLoadedSession) << 24,
+			PropertyCount: 16,
+		}.Execute(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		handles, err := got.CapabilityData.Data.Handles()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(handles.Handle)
+	}
+	wrong := &tpmOps{t: tr, auth: []byte("wrong")}
+	for i := range 8 {
+		_, err := wrong.activate(obj, objName, ek, ekName, pub, nil, nil)
+		if !errors.Is(err, tpm2.TPMRCBadAuth) && !errors.Is(err, tpm2.TPMRCAuthFail) {
+			t.Fatalf("failure %d: %v, want the authorization refused", i, err)
+		}
+		if n := sessions(); n != 0 {
+			t.Fatalf("failure %d leaves %d session(s)", i, n)
+		}
+	}
+	// A refused activation with the right authorization leaves none either.
+	if _, err := right.activate(obj, objName, ek, ekName, pub, nil, nil); err == nil {
+		t.Fatal("an empty credential activated")
+	}
+	if n := sessions(); n != 0 {
+		t.Fatalf("the right authorization leaves %d session(s)", n)
 	}
 }

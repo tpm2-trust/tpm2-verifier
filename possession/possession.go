@@ -305,14 +305,21 @@ func (o *tpmOps) activate(obj tpm2.TPMHandle, objName tpm2.TPM2BName, ek tpm2.TP
 	// EKs need PolicySecret(TPM_RH_ENDORSEMENT).
 	ekAuth := tpm2.PasswordAuth(nil)
 	if !ekTmpl.ObjectAttributes.UserWithAuth {
-		ekAuth = tpm2.Policy(ekTmpl.NameAlg, 16, func(t transport.TPM, s tpm2.TPMISHPolicy, nonce tpm2.TPM2BNonce) error {
-			_, err := tpm2.PolicySecret{
-				AuthHandle:    tpm2.AuthHandle{Handle: tpm2.TPMRHEndorsement, Auth: tpm2.PasswordAuth(o.auth)},
-				PolicySession: s,
-				NonceTPM:      nonce,
-			}.Execute(t)
-			return err
-		})
+		// A session of its own, flushed on every way out: a session of
+		// go-tpm's tpm2.Policy stays in the TPM when its callback fails.
+		session, flush, err := tpm2.PolicySession(o.t, ekTmpl.NameAlg, 16)
+		if err != nil {
+			return nil, err
+		}
+		defer flush()
+		if _, err := (tpm2.PolicySecret{
+			AuthHandle:    tpm2.AuthHandle{Handle: tpm2.TPMRHEndorsement, Auth: tpm2.PasswordAuth(o.auth)},
+			PolicySession: session.Handle(),
+			NonceTPM:      session.NonceTPM(),
+		}).Execute(o.t); err != nil {
+			return nil, err
+		}
+		ekAuth = session
 	}
 	rsp, err := tpm2.ActivateCredential{
 		ActivateHandle: tpm2.AuthHandle{Handle: obj, Name: objName, Auth: tpm2.PasswordAuth(nil)},
