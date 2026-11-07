@@ -12,7 +12,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tpm2-trust/tpm2-verifier/internal/gitattr"
 )
+
+// No checkout converts the signing keys or the signed test vectors.
+func TestCheckedOutAsIs(t *testing.T) {
+	gitattr.RequireBinary(t, "allowed_signers", "testdata")
+}
 
 // TestSSHKeygenSignature checks a signature made with
 // ssh-keygen -Y sign -n tpm2-verifier-vendors (testdata/message.sig).
