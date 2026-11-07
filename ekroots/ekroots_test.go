@@ -12,10 +12,16 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/tpm2-trust/tpm2-verifier/internal/gitattr"
 	"github.com/tpm2-trust/tpm2-verifier/internal/testpki"
 	"github.com/tpm2-trust/tpm2-verifier/manifest"
 	"github.com/tpm2-trust/tpm2-verifier/store"
 )
+
+// No checkout converts the embedded data: its bytes are hashed in MANIFEST.
+func TestVendorsCheckedOutAsIs(t *testing.T) {
+	gitattr.RequireBinary(t, "vendors")
+}
 
 // The embedded data loads: every file is in the manifest with its hash,
 // signed once allowed_signers names a key, and the store has Intel's root.

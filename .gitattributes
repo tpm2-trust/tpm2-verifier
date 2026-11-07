@@ -1,3 +1,11 @@
-# The vendor data is checked byte for byte against vendors/MANIFEST: no
-# line ending conversion (e.g. on Windows checkouts).
-vendors/** -text
+# Checked byte for byte, so never converted at checkout (Windows'
+# core.autocrlf=true would write CRLF and change their SHA-256):
+# - the embedded vendor data, against its MANIFEST and MANIFEST.sig;
+# - the built-in signing keys;
+# - the signed test vectors.
+# A pattern with a slash is anchored at the repository's root: moving one of
+# these directories moves its line too. internal/gitattr checks it in the
+# tests of ekroots and manifest.
+ekroots/vendors/** -text
+manifest/allowed_signers -text
+manifest/testdata/** -text
