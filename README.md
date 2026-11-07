@@ -269,7 +269,7 @@ replayed by the tests and must still produce the status recorded in it.
 ### The EK roots, embedded: `ekroots`
 
 The curated vendor store, for every program that checks a TPM's EK
-certificate (tpm2-kira's core, and through it the Marify app, tpm2-kira and
+certificate (kira's core, and through it the Marify app, kira and
 its vault): the vendor data of `ekroots/vendors/`, embedded at build time and
 checked at load against its `MANIFEST` and - once `manifest/allowed_signers`
 names a key - its signature `MANIFEST.sig`. Nothing is added at runtime.
