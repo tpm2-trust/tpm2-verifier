@@ -1,6 +1,6 @@
 // Package ekroots is the curated store of TPM vendors' endorsement key
 // (EK) roots, for every program that checks a TPM's EK certificate: the
-// phone app (through tpm2-kira's core), tpm2-kira, its vault and
+// phone app (through kira's core), kira, its vault and
 // tpm2-verifier's own command. The vendor data of vendors/ - per vendor its
 // roots, the intermediates its TPMs do not carry, vendor.yaml - is embedded
 // at build time, and checked at load against its MANIFEST (the SHA-256 of
